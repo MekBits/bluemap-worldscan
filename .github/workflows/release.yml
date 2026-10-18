@@ -1,0 +1,50 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 25
+      - name: Build
+        run: ./gradlew build
+      - name: Check the shadow jar
+        run: |
+          set -eu
+          jars=$(find build/libs -name 'bluemap-worldscan-*.jar' ! -name '*-plain.jar')
+          if [ "$(echo "$jars" | wc -l)" -ne 1 ]; then
+            echo "expected exactly one shadow jar, found:"; echo "$jars"; exit 1
+          fi
+          entries=$(unzip -Z1 "$jars")
+          fail=0
+          check() {
+            if [ -n "$2" ]; then
+              echo "$1:"; echo "$2"; fail=1
+            fi
+          }
+          check "assets/ or data/ entries" "$(echo "$entries" | grep -E '^(assets|data)/' || true)"
+          check "native libraries" "$(echo "$entries" | grep -E '\.(so|dylib|dll|jnilib)$' || true)"
+          check "module-info.class entries" "$(echo "$entries" | grep -E '(^|/)module-info\.class$' || true)"
+          check "classes outside dk/mekbits/bluemapworldscan/" "$(echo "$entries" | grep -E '\.class$' | grep -v '^dk/mekbits/bluemapworldscan/' || true)"
+          if ! echo "$entries" | grep -qx 'bluemap.addon.json'; then
+            echo "bluemap.addon.json is not at the root of the jar"; fail=1
+          fi
+          exit "$fail"
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          jar=$(find build/libs -name 'bluemap-worldscan-*.jar' ! -name '*-plain.jar')
+          gh release create "$GITHUB_REF_NAME" "$jar" --generate-notes
