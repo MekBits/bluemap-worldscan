@@ -54,7 +54,8 @@ public final class AddonLifecycle {
     private @Nullable ScheduledFuture<?> refresh;
 
     public AddonLifecycle(Path folder, String addonVersion) {
-        this(folder, addonVersion, TimeUnit.MINUTES, new ClientAssetIcons(new ClientJar(AddonFolder.clientJarFolder(folder))::ensure));
+        this(folder, addonVersion, TimeUnit.MINUTES,
+                new ClientAssetIcons(new ClientJar(AddonFolder.clientJarFolder(folder))::ensure));
     }
 
     /**

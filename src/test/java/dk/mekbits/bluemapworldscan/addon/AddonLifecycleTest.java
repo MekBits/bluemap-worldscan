@@ -159,6 +159,23 @@ class AddonLifecycleTest {
     }
 
     @Test
+    void aCommandLineThatDoesNotScanKeepsFollowingNewGenerationsAfterItsRenderRunEnds() throws IOException {
+        InMemoryAssetStorage shared = new InMemoryAssetStorage("overworld");
+        InMemoryBlueMapMap viewerMap = new InMemoryBlueMapMap("overworld", shared);
+        InMemoryBlueMapMap scannerMap = new InMemoryBlueMapMap("overworld", shared);
+        Path dimension = TestWorlds.withMonument(temp.resolve("world"));
+        AddonLifecycle viewer = lifecycle(addonFolder("viewer", "{\"scan\": false, \"refreshMinutes\": 20}"));
+        FakeBlueMap commandLine = api(false, dimension, viewerMap);
+        viewer.onEnable(commandLine);
+        viewer.onDisable(commandLine);
+        assertTrue(viewerMap.getMarkerSets().isEmpty(), "nothing is stored yet");
+
+        lifecycle(addonFolder("scanner", null)).onEnable(api(true, dimension, scannerMap));
+
+        Await.until("the layers on the command line's web server", () -> has(viewerMap, MONUMENT_SET));
+    }
+
+    @Test
     void aStoredGenerationShowsAtOnceOnStartWithoutAScan() throws IOException {
         InMemoryAssetStorage shared = new InMemoryAssetStorage("overworld");
         Path dimension = TestWorlds.withMonument(temp.resolve("world"));
