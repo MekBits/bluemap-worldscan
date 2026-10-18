@@ -27,7 +27,8 @@ import net.kyori.adventure.nbt.ListBinaryTag;
  * {@code zPos}, {@code below_zero_retrogen.target_status}, {@code structures.starts} (whole
  * subtree), {@code sections[].biomes} (whole). Kept, {@code Level} layout: {@code DataVersion},
  * {@code Level.Status}, {@code Level.xPos}, {@code Level.zPos}, {@code Level.Biomes},
- * {@code Level.Structures.Starts} (whole subtree), {@code Level.Sections[].biomes} (whole).
+ * {@code Level.below_zero_retrogen.target_status}, {@code Level.Structures.Starts} (whole
+ * subtree), {@code Level.Sections[].biomes} (whole).
  * {@code FixtureHygieneTest} checks the committed result against the same list.
  */
 public final class FixtureReducer {
@@ -52,6 +53,7 @@ public final class FixtureReducer {
         if (level != null) {
             CompoundBinaryTag.Builder reducedLevel = CompoundBinaryTag.builder();
             copy(level, reducedLevel, "Status", "xPos", "zPos", "Biomes");
+            putPicked(reducedLevel, "below_zero_retrogen", level.getCompound("below_zero_retrogen", null), "target_status");
             putPicked(reducedLevel, "Structures", level.getCompound("Structures", null), "Starts");
             putSections(reducedLevel, "Sections", level.getList("Sections", BinaryTagTypes.COMPOUND, null));
             reduced.put("Level", reducedLevel.build());

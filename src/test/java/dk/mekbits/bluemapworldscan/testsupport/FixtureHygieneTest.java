@@ -35,7 +35,8 @@ class FixtureHygieneTest {
     private static final Set<String> RETROGEN = Set.of("target_status");
     private static final Set<String> STRUCTURES = Set.of("starts");
     private static final Set<String> SECTION = Set.of("biomes");
-    private static final Set<String> LEVEL = Set.of("Status", "xPos", "zPos", "Biomes", "Structures", "Sections");
+    private static final Set<String> LEVEL = Set.of(
+            "Status", "xPos", "zPos", "Biomes", "below_zero_retrogen", "Structures", "Sections");
     private static final Set<String> LEVEL_STRUCTURES = Set.of("Starts");
 
     @Test
@@ -70,6 +71,20 @@ class FixtureHygieneTest {
         assertEquals(List.of("block_entities"), violations(chunk));
     }
 
+    @Test
+    void theCheckFlagsATagOutsideTheAllowListInALevelRetrogen() {
+        CompoundBinaryTag chunk = CompoundBinaryTag.builder()
+                .put("Level", CompoundBinaryTag.builder()
+                        .put("below_zero_retrogen", CompoundBinaryTag.builder()
+                                .putString("target_status", "heightmaps")
+                                .putByteArray("missing_bedrock", new byte[] {1})
+                                .build())
+                        .build())
+                .build();
+
+        assertEquals(List.of("Level.below_zero_retrogen.missing_bedrock"), violations(chunk));
+    }
+
     /** Paths of the tags in {@code root} that are not on the allow-list. */
     private static List<String> violations(CompoundBinaryTag root) {
         List<String> violations = new ArrayList<>();
@@ -80,6 +95,7 @@ class FixtureHygieneTest {
 
         CompoundBinaryTag level = root.getCompound("Level", CompoundBinaryTag.empty());
         check(level, LEVEL, "Level.", violations);
+        check(level.getCompound("below_zero_retrogen", CompoundBinaryTag.empty()), RETROGEN, "Level.below_zero_retrogen.", violations);
         check(level.getCompound("Structures", CompoundBinaryTag.empty()), LEVEL_STRUCTURES, "Level.Structures.", violations);
         checkSections(level.getList("Sections", BinaryTagTypes.COMPOUND, ListBinaryTag.empty()), "Level.Sections", violations);
         return violations;
@@ -188,6 +204,10 @@ class FixtureHygieneTest {
                         .putInt("zPos", -4)
                         .putIntArray("Biomes", new int[] {8, 8, 171})
                         .putLong("InhabitedTime", 1L)
+                        .put("below_zero_retrogen", CompoundBinaryTag.builder()
+                                .putString("target_status", "minecraft:heightmaps")
+                                .putByteArray("missing_bedrock", new byte[] {1})
+                                .build())
                         .put("TileEntities", ListBinaryTag.builder(BinaryTagTypes.COMPOUND).add(blockEntity()).build())
                         .put("Structures", CompoundBinaryTag.builder()
                                 .put("Starts", STARTS)
@@ -206,8 +226,11 @@ class FixtureHygieneTest {
 
         assertEquals(Set.of("DataVersion", "Level"), reduced.keySet());
         CompoundBinaryTag level = reduced.getCompound("Level");
-        assertEquals(Set.of("Status", "xPos", "zPos", "Biomes", "Structures", "Sections"), level.keySet());
+        assertEquals(Set.of("Status", "xPos", "zPos", "Biomes", "below_zero_retrogen", "Structures", "Sections"), level.keySet());
         assertEquals(raw.getCompound("Level").get("Biomes"), level.get("Biomes"));
+        assertEquals(Set.of("target_status"), level.getCompound("below_zero_retrogen").keySet());
+        assertEquals(raw.getCompound("Level").getCompound("below_zero_retrogen").get("target_status"),
+                level.getCompound("below_zero_retrogen").get("target_status"));
         assertEquals(Set.of("Starts"), level.getCompound("Structures").keySet());
         assertEquals(STARTS, level.getCompound("Structures").getCompound("Starts"));
         assertEquals(Set.of(), level.getList("Sections").getCompound(0).keySet());
