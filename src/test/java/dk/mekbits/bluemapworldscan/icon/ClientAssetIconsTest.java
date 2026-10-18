@@ -99,7 +99,7 @@ class ClientAssetIconsTest {
 
     @Test
     void withoutAClientJarThereAreNoIcons() {
-        ClientAssetIcons icons = new ClientAssetIcons(new ClientJar(folder.resolve("none"), URI.create("http://127.0.0.1:1/"), uri -> true, ClientJar.MAX_JAR_BYTES)::ensure);
+        ClientAssetIcons icons = new ClientAssetIcons(new ClientJar(folder.resolve("none"), URI.create("http://127.0.0.1:1/"), uri -> true, ClientJar.MAX_JAR_BYTES, ClientJar.MAX_JSON_BYTES)::ensure);
 
         try (LogCapture log = new LogCapture()) {
             assertEquals(Map.of(), icons.pngByLayer());

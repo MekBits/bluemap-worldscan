@@ -31,6 +31,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /** Runs {@link ClientJar} against a local server that plays Mojang's version manifest. */
 class ClientJarTest {
@@ -50,6 +51,7 @@ class ClientJarTest {
     private volatile String jarLocation = "/client.jar";
     private volatile String redirectTo;
     private volatile boolean chunked;
+    private volatile boolean floodTheManifest;
     private volatile int floodStatus;
     private volatile boolean floodDeclaresItsLength;
     private final AtomicLong floodWritten = new AtomicLong();
@@ -61,7 +63,13 @@ class ClientJarTest {
     @BeforeEach
     void startServer() throws IOException {
         server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
-        server.createContext("/manifest.json", exchange -> reply(exchange, 200, manifest().getBytes(StandardCharsets.UTF_8)));
+        server.createContext("/manifest.json", exchange -> {
+            if (floodTheManifest) {
+                flood(exchange);
+            } else {
+                reply(exchange, 200, manifest().getBytes(StandardCharsets.UTF_8));
+            }
+        });
         server.createContext("/version.json", exchange -> {
             versionRequests.incrementAndGet();
             reply(exchange, 200, version().getBytes(StandardCharsets.UTF_8));
@@ -139,10 +147,14 @@ class ClientJarTest {
     }
 
     /** Trusts the local server on top of what Mojang's URLs need, so the tests need no network. */
-    private ClientJar clientJar(long maxJarBytes) {
+    private ClientJar clientJar(long maxJarBytes, long maxJsonBytes) {
         return new ClientJar(
                 folder, URI.create(base() + "/manifest.json"),
-                uri -> "127.0.0.1".equals(uri.getHost()) || ClientJar.isMojangUrl(uri), maxJarBytes);
+                uri -> "127.0.0.1".equals(uri.getHost()) || ClientJar.isMojangUrl(uri), maxJarBytes, maxJsonBytes);
+    }
+
+    private ClientJar clientJar(long maxJarBytes) {
+        return clientJar(maxJarBytes, ClientJar.MAX_JSON_BYTES);
     }
 
     private ClientJar clientJar() {
@@ -264,7 +276,8 @@ class ClientJarTest {
     void aVersionFileUrlThatIsNotTrustedIsNotRequested() {
         ClientJar strict = new ClientJar(
                 folder, URI.create(base() + "/manifest.json"),
-                uri -> "127.0.0.1".equals(uri.getHost()) && uri.getPath().equals("/manifest.json"), ClientJar.MAX_JAR_BYTES);
+                uri -> "127.0.0.1".equals(uri.getHost()) && uri.getPath().equals("/manifest.json"),
+                ClientJar.MAX_JAR_BYTES, ClientJar.MAX_JSON_BYTES);
 
         assertTrue(strict.ensure().isEmpty());
 
@@ -332,6 +345,20 @@ class ClientJarTest {
         }
         assertTheClientStoppedReadingEarly();
         assertEquals(List.of(), filesInFolder());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void aVersionManifestFarOverTheLimitIsNotReadToTheEnd(boolean declaresItsLength) throws Exception {
+        floodTheManifest = true;
+        floodStatus = 200;
+        floodDeclaresItsLength = declaresItsLength;
+
+        try (LogCapture log = new LogCapture()) {
+            assertTrue(clientJar(ClientJar.MAX_JAR_BYTES, SMALL_LIMIT).ensure().isEmpty());
+            assertEquals(1, log.warnings().size(), log.warnings().toString());
+        }
+        assertTheClientStoppedReadingEarly();
     }
 
     @Test

@@ -44,6 +44,8 @@ public final class ClientJar {
     static final URI VERSION_MANIFEST = URI.create("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json");
     /** The Minecraft 26.3 client jar is 41 MB. */
     static final long MAX_JAR_BYTES = 200L << 20;
+    /** The version manifest is 278 KB and a version file 45 KB. */
+    static final long MAX_JSON_BYTES = 16L << 20;
 
     private static final String PREFIX = "client-";
     private static final String SUFFIX = ".jar";
@@ -57,17 +59,19 @@ public final class ClientJar {
     private final URI versionManifest;
     private final Predicate<URI> trusted;
     private final long maxJarBytes;
+    private final long maxJsonBytes;
 
     public ClientJar(Path folder) {
-        this(folder, VERSION_MANIFEST, ClientJar::isMojangUrl, MAX_JAR_BYTES);
+        this(folder, VERSION_MANIFEST, ClientJar::isMojangUrl, MAX_JAR_BYTES, MAX_JSON_BYTES);
     }
 
-    /** The trust check and the size limit are parameters so that tests can use a local server and a small jar. */
-    ClientJar(Path folder, URI versionManifest, Predicate<URI> trusted, long maxJarBytes) {
+    /** The trust check and the size limits are parameters so that tests can use a local server and small bodies. */
+    ClientJar(Path folder, URI versionManifest, Predicate<URI> trusted, long maxJarBytes, long maxJsonBytes) {
         this.folder = folder;
         this.versionManifest = versionManifest;
         this.trusted = trusted;
         this.maxJarBytes = maxJarBytes;
+        this.maxJsonBytes = maxJsonBytes;
     }
 
     /** Whether the URL is https and its host is under {@code mojang.com}. */
@@ -150,7 +154,8 @@ public final class ClientJar {
     }
 
     private JsonObject getJson(HttpClient http, URI uri) throws IOException, InterruptedException {
-        HttpResponse<String> response = get(http, uri, MANIFEST_TIMEOUT, BodyHandlers.ofString(), "");
+        HttpResponse<String> response = get(
+                http, uri, MANIFEST_TIMEOUT, BodyHandlers.limiting(BodyHandlers.ofString(), maxJsonBytes), "");
         if (response.statusCode() != 200) {
             throw new IOException("HTTP " + response.statusCode() + " from " + uri);
         }
@@ -182,7 +187,7 @@ public final class ClientJar {
         }
     }
 
-    /** Gives up on the body at once, which closes the connection, instead of reading it to the end. */
+    /** Gives up on the body at once, which stops the transfer, instead of reading it to the end. */
     private static <T> BodySubscriber<T> unread(T instead) {
         return BodySubscribers.mapping(BodySubscribers.ofInputStream(), body -> {
             try {
