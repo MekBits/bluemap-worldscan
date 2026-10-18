@@ -29,14 +29,11 @@ public record LayersFile(int formatVersion, List<LayerSet> sets) {
      * @param defaultHidden whether the set starts switched off
      * @param sorting the position in the sidebar
      * @param pois the point markers, in a fixed order
-     * @param areas the shape markers, in a fixed order
      */
-    public record LayerSet(
-            String id, String label, boolean defaultHidden, int sorting, List<Poi> pois, List<Area> areas) {
+    public record LayerSet(String id, String label, boolean defaultHidden, int sorting, List<Poi> pois) {
 
         public LayerSet {
             pois = pois == null ? List.of() : List.copyOf(pois);
-            areas = areas == null ? List.of() : List.copyOf(areas);
         }
     }
 
@@ -57,18 +54,5 @@ public record LayersFile(int formatVersion, List<LayerSet> sets) {
     public record Poi(
             String id, String label, int x, int y, int z, String detail,
             @Nullable String icon, int anchorX, int anchorY, double maxDistance) {
-    }
-
-    /**
-     * A shape marker: an outline with holes, flat at one height.
-     *
-     * @param id the marker id, unique in its set
-     * @param label the marker label
-     * @param y the height the shape is drawn at
-     * @param outline the outer ring as {x, z} block coordinates
-     * @param holes the inner rings
-     * @param fillArgb the fill colour as 0xAARRGGBB
-     */
-    public record Area(String id, String label, float y, List<int[]> outline, List<List<int[]>> holes, int fillArgb) {
     }
 }

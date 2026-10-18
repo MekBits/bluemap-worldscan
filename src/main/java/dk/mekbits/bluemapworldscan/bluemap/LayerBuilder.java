@@ -54,7 +54,7 @@ public final class LayerBuilder {
         for (Layer layer : layers) {
             sets.add(new LayerSet(
                     STRUCTURE_SET_PREFIX + layer.id(), layer.label(), layer.defaultHidden(), sets.size(),
-                    List.copyOf(poisByLayer.get(layer).values()), List.of()));
+                    List.copyOf(poisByLayer.get(layer).values())));
         }
         return sets;
     }

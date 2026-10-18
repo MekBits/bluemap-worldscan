@@ -15,7 +15,6 @@ import java.util.List;
 import java.util.zip.GZIPOutputStream;
 
 import dk.mekbits.bluemapworldscan.layer.LayersFile;
-import dk.mekbits.bluemapworldscan.layer.LayersFile.Area;
 import dk.mekbits.bluemapworldscan.layer.LayersFile.LayerSet;
 import dk.mekbits.bluemapworldscan.layer.LayersFile.Poi;
 import dk.mekbits.bluemapworldscan.testsupport.InMemoryAssetStorage;
@@ -32,11 +31,9 @@ class LayerStoreTest {
         Poi poi = new Poi("4_71_4", "Village", 4, 71, 4, "<div>\"quoted\" & <code>/tp @s 4 71 4</code></div>",
                 "maps/overworld/assets/v.png", 11, 11, 5000);
         Poi withoutIcon = new Poi("9_60_9", "Igloo", 9, 60, 9, "x", null, 11, 11, 5000);
-        Area area = new Area("a", "Plains", 63f, List.of(new int[] {0, 0}, new int[] {64, 0}, new int[] {64, 64}),
-                List.of(List.of(new int[] {10, 10}, new int[] {20, 10}, new int[] {20, 20})), 0x73abcdef);
         return new LayersFile(1, List.of(
-                new LayerSet("worldscan-structure-village", "Village", false, 0, List.of(poi, withoutIcon), List.of()),
-                new LayerSet("worldscan-biome-plains", "Biome: Plains", true, 1, List.of(), List.of(area))));
+                new LayerSet("worldscan-structure-village", "Village", false, 0, List.of(poi, withoutIcon)),
+                new LayerSet("worldscan-structure-igloo", "Igloo", true, 1, List.of(withoutIcon))));
     }
 
     private static byte[] gzip(String text) throws IOException {
@@ -54,13 +51,7 @@ class LayerStoreTest {
         LayerStore.write(storage, written, MANIFEST);
 
         LayersFile read = assertOk(LayerStore.readLayers(storage));
-        assertEquals(written.sets().getFirst(), read.sets().getFirst());
-        Area area = read.sets().get(1).areas().getFirst();
-        assertEquals("Plains", area.label());
-        assertEquals(63f, area.y());
-        assertEquals(0x73abcdef, area.fillArgb());
-        assertArrayEquals(new int[] {64, 64}, area.outline().get(2));
-        assertArrayEquals(new int[] {20, 20}, area.holes().getFirst().get(2));
+        assertEquals(written, read);
         assertEquals(MANIFEST, assertOk(LayerStore.readManifest(storage)));
     }
 

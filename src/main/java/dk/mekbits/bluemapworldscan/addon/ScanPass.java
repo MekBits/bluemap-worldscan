@@ -157,6 +157,6 @@ final class ScanPass {
     }
 
     private static int markerCount(LayersFile layers) {
-        return layers.sets().stream().mapToInt(set -> set.pois().size() + set.areas().size()).sum();
+        return layers.sets().stream().mapToInt(set -> set.pois().size()).sum();
     }
 }

@@ -22,7 +22,7 @@ class LayerPublisherTest {
     private final LayerPublisher publisher = new LayerPublisher();
 
     private static LayerSet set(String id, boolean hidden, int sorting, Poi... pois) {
-        return new LayerSet(id, "Label of " + id, hidden, sorting, List.of(pois), List.of());
+        return new LayerSet(id, "Label of " + id, hidden, sorting, List.of(pois));
     }
 
     private static Poi poi(int x, int z, String icon) {

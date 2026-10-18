@@ -30,7 +30,6 @@ dependencies {
 
     implementation("net.kyori:adventure-nbt:5.2.0")
     implementation("at.yawk.lz4:lz4-java:1.10.1")
-    implementation("org.locationtech.jts:jts-core:1.20.0")
     implementation("com.google.code.gson:gson:2.14.0")
 
     testImplementation("de.bluecolored:bluemap-api:2.8.2")
@@ -111,7 +110,6 @@ tasks.shadowJar {
     relocate("com.google.gson", "$libPackage.gson")
     relocate("net.kyori", "$libPackage.kyori")
     relocate("net.jpountz", "$libPackage.jpountz")
-    relocate("org.locationtech.jts", "$libPackage.jts")
 
     exclude("**/module-info.class")
     exclude("net/jpountz/util/*/*/liblz4-java.*")
