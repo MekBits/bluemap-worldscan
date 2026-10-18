@@ -1,7 +1,7 @@
 # Third-party notices
 
-bluemap-worldscan is MIT licensed (see `LICENSE`). It credits the project below whose code it is
-modelled on, and the jar bundles the libraries below, relocated under
+bluemap-worldscan is MIT licensed (see `LICENSE`). It credits the projects below whose code it is
+modelled on or adapted from, and the jar bundles the libraries below, relocated under
 `dk.mekbits.bluemapworldscan.lib` so they cannot clash with the copies BlueMap and the platform
 ship. Their licence texts follow.
 
@@ -34,6 +34,39 @@ layouts and field names on `Chunk_1_13` and `Chunk_1_18`, of BlueMap v5.29
     LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
     SOFTWARE.
+
+## a24k/bluemap-structures-paper (MIT)
+
+Not bundled. The layer icons (the choice of vanilla textures per layer, the 22x22 composition, the
+download of the Minecraft client jar checked against Mojang's sha1), the layer names and zoom
+tiers, the marker popup and the writing of icons to a map's asset storage are adapted from this
+project (<https://github.com/a24k/bluemap-structures-paper>).
+
+    MIT License
+
+    Copyright (c) 2026 Atsushi KAWASAKI
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
+
+The Minecraft textures the icons are made from are not part of this repository or of the jar:
+each scanning instance downloads the client jar from Mojang's distribution endpoint and makes
+the icons from it.
 
 ## adventure-nbt 5.2.0 (MIT)
 
