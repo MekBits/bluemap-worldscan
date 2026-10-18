@@ -3,6 +3,7 @@ package dk.mekbits.bluemapworldscan.bluemap;
 import static dk.mekbits.bluemapworldscan.testsupport.LoadedAssertions.assertOk;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -126,6 +127,31 @@ class LayerStoreTest {
 
         assertTrue(layers.reason().contains("update bluemap-worldscan"), layers.reason());
         assertTrue(manifest.reason().contains("update bluemap-worldscan"), manifest.reason());
+    }
+
+    @Test
+    void onlyAFormatNewerThanThisAddonsCountsAsNewer() throws IOException {
+        assertFalse(LayerStore.holdsNewerFormat(storage), "nothing stored");
+
+        LayerStore.write(storage, layers(), MANIFEST);
+        assertFalse(LayerStore.holdsNewerFormat(storage), "this addon's own files");
+
+        storage.put("bluemap-worldscan-manifest.json", "not json".getBytes(StandardCharsets.UTF_8));
+        assertFalse(LayerStore.holdsNewerFormat(storage), "a damaged manifest");
+
+        storage.put("bluemap-worldscan-manifest.json", "{\"formatVersion\":0}".getBytes(StandardCharsets.UTF_8));
+        assertFalse(LayerStore.holdsNewerFormat(storage), "an older manifest");
+
+        storage.put("bluemap-worldscan-manifest.json", "{\"formatVersion\":2,\"shape\":\"changed\"}".getBytes(StandardCharsets.UTF_8));
+        assertTrue(LayerStore.holdsNewerFormat(storage), "a newer manifest, even with other fields");
+    }
+
+    @Test
+    void newerLayersUnderAnOwnManifestCountAsNewer() throws IOException {
+        LayerStore.write(storage, layers(), MANIFEST);
+        storage.put("bluemap-worldscan-layers.json.gz", gzip("{\"formatVersion\":2,\"sets\":[]}"));
+
+        assertTrue(LayerStore.holdsNewerFormat(storage));
     }
 
     @Test

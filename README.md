@@ -300,7 +300,9 @@ You need a new release of the addon when:
   with no icon, and listed as unknown in the log.
 
 A stored layers file or manifest in a format a running instance does not know is left alone: the
-instance keeps the layers it shows and logs `update bluemap-worldscan on this instance`.
+instance keeps the layers it shows and logs `update bluemap-worldscan on this instance`. A scanning
+instance that finds such files in a map's storage stores nothing for that map and logs a warning,
+so an old addon never replaces the layers of a newer one.
 
 ## Build
 

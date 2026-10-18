@@ -60,9 +60,32 @@ public final class LayerStore {
         return read(storage, LAYERS_ASSET, true, LayersFile.class, LayersFile.FORMAT_VERSION, LayersFile::formatVersion);
     }
 
+    /**
+     * Whether the storage holds a manifest or layers of a format newer than this addon writes. A
+     * scanner must not replace those: the instances that run the newer addon would lose their layers.
+     */
+    public static boolean holdsNewerFormat(AssetStorage storage) {
+        return isNewer(storage, MANIFEST_ASSET, false, Manifest.FORMAT_VERSION)
+                || isNewer(storage, LAYERS_ASSET, true, LayersFile.FORMAT_VERSION);
+    }
+
+    private static boolean isNewer(AssetStorage storage, String asset, boolean gzip, int knownVersion) {
+        return parse(storage, asset, gzip, FormatProbe.class) instanceof Loaded.Ok<FormatProbe>(FormatProbe probe)
+                && probe.formatVersion() > knownVersion;
+    }
+
     private static <T> Loaded<T> read(
             AssetStorage storage, String asset, boolean gzip, Class<T> type, int knownVersion,
             ToIntFunction<T> versionOf) {
+        Loaded<T> parsed = parse(storage, asset, gzip, type);
+        if (parsed instanceof Loaded.Ok<T>(T value) && versionOf.applyAsInt(value) != knownVersion) {
+            return new Loaded.Failed<>(asset + " has format version " + versionOf.applyAsInt(value)
+                    + ", this addon reads version " + knownVersion + ": update bluemap-worldscan on this instance");
+        }
+        return parsed;
+    }
+
+    private static <T> Loaded<T> parse(AssetStorage storage, String asset, boolean gzip, Class<T> type) {
         try {
             Optional<InputStream> stored = storage.readAsset(asset);
             if (stored.isEmpty()) {
@@ -71,17 +94,14 @@ public final class LayerStore {
             try (InputStream in = gzip ? new GZIPInputStream(stored.get()) : stored.get();
                     InputStreamReader reader = new InputStreamReader(in, StandardCharsets.UTF_8)) {
                 T value = GSON.fromJson(reader, type);
-                if (value == null) {
-                    return new Loaded.Failed<>(asset + " is empty");
-                }
-                if (versionOf.applyAsInt(value) != knownVersion) {
-                    return new Loaded.Failed<>(asset + " has format version " + versionOf.applyAsInt(value)
-                            + ", this addon reads version " + knownVersion + ": update bluemap-worldscan on this instance");
-                }
-                return new Loaded.Ok<>(value);
+                return value == null ? new Loaded.Failed<>(asset + " is empty") : new Loaded.Ok<>(value);
             }
         } catch (IOException | RuntimeException e) {
             return new Loaded.Failed<>(asset + " cannot be read: " + e);
         }
+    }
+
+    /** Only the version of a stored file, so a newer format with other fields can still be told from a damaged file. */
+    private record FormatProbe(int formatVersion) {
     }
 }

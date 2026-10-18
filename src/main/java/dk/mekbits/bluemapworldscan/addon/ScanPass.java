@@ -132,13 +132,17 @@ final class ScanPass {
 
     private void publishMap(MapLayers map, ScanState state, Map<String, byte[]> pngByLayer) throws IOException {
         String mapId = map.map().getId();
+        if (LayerStore.holdsNewerFormat(map.storage())) {
+            Log.warn("the layers of map " + mapId + " were stored by a newer bluemap-worldscan; update this instance. "
+                    + "The stored layers are kept and no new ones are stored for this map");
+            return;
+        }
         // The icon URLs name the map, so each map gets its own layers file.
         Map<String, String> iconUrls = IconAssets.writeAll(map.storage(), pngByLayer);
         LayersFile layers = new LayersFile(LayersFile.FORMAT_VERSION, LayerBuilder.buildStructures(state, config, iconUrls));
         byte[] json = LayerStore.toJson(layers);
         if (json.length > LAYERS_WARNING_BYTES) {
-            Log.warn("the layers of map " + mapId + " are " + (json.length >> 20) + " MB of JSON, which every browser loads; "
-                    + "make them smaller with structures.disabledLayers, biomes.cellSizeChunks and biomes.disabled");
+            Log.warn(oversizedLayersMessage(mapId, json.length));
         }
 
         String sha1 = Sha1.hex(json);
@@ -154,6 +158,11 @@ final class ScanPass {
         LayerStore.write(map.storage(), layers, new Manifest(Manifest.FORMAT_VERSION, generation, scannerId, addonVersion, sha1));
         Log.info("stored generation " + generation + " of the layers of map " + mapId + " (" + markerCount(layers) + " markers)");
         map.refreshIfNewer();
+    }
+
+    static String oversizedLayersMessage(String mapId, int jsonBytes) {
+        return "the layers of map " + mapId + " are " + (jsonBytes >> 20) + " MB of JSON, which every browser loads; "
+                + "make them smaller with structures.disabledLayers";
     }
 
     private static int markerCount(LayersFile layers) {

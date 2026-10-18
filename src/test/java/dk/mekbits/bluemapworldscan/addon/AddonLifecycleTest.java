@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -20,6 +21,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import java.util.zip.GZIPOutputStream;
 
 import de.bluecolored.bluemap.api.markers.POIMarker;
 import dk.mekbits.bluemapworldscan.bluemap.LayerStore;
@@ -36,12 +38,15 @@ import dk.mekbits.bluemapworldscan.testsupport.TestWorlds;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class AddonLifecycleTest {
 
     private static final String MONUMENT_SET = "worldscan-structure-monument";
     private static final String VILLAGE_SET = "worldscan-structure-village";
     private static final String LAYERS_ASSET = "bluemap-worldscan-layers.json.gz";
+    private static final String MANIFEST_ASSET = "bluemap-worldscan-manifest.json";
 
     @TempDir
     Path temp;
@@ -254,6 +259,47 @@ class AddonLifecycleTest {
     }
 
     @Test
+    void layersStoredByANewerAddonAreKeptAndTheScannerSaysSo() throws IOException {
+        InMemoryAssetStorage shared = new InMemoryAssetStorage("overworld");
+        byte[] manifest = "{\"formatVersion\":2,\"generation\":5,\"scannerId\":\"s\",\"addonVersion\":\"2.0.0\",\"layersSha1\":\"x\"}"
+                .getBytes(StandardCharsets.UTF_8);
+        byte[] layers = gzip("{\"formatVersion\":2,\"sets\":[]}");
+        shared.put(MANIFEST_ASSET, manifest);
+        shared.put(LAYERS_ASSET, layers);
+        FakeBlueMap commandLine = api(false, TestWorlds.withMonument(temp.resolve("world")), new InMemoryBlueMapMap("overworld", shared));
+        AddonLifecycle lifecycle = lifecycle(addonFolder("addon", null));
+
+        try (LogCapture log = new LogCapture()) {
+            lifecycle.onEnable(commandLine);
+            lifecycle.onDisable(commandLine);
+
+            assertEquals(1, log.warnings().stream().filter(message -> message.contains("newer bluemap-worldscan")).count(),
+                    log.warnings().toString());
+        }
+        assertArrayEquals(manifest, shared.bytes(MANIFEST_ASSET));
+        assertArrayEquals(layers, shared.bytes(LAYERS_ASSET));
+        assertEquals(Set.of(MANIFEST_ASSET, LAYERS_ASSET), shared.names(), "no icons were written either");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "not json",
+            "{\"formatVersion\":0,\"generation\":5,\"scannerId\":\"s\",\"addonVersion\":\"0.1.0\",\"layersSha1\":\"x\"}"})
+    void aDamagedOrOlderManifestIsReplacedByTheScan(String storedManifest) throws IOException {
+        InMemoryAssetStorage shared = new InMemoryAssetStorage("overworld");
+        shared.put(MANIFEST_ASSET, storedManifest.getBytes(StandardCharsets.UTF_8));
+        Path folder = addonFolder("addon", null);
+        FakeBlueMap commandLine = api(false, TestWorlds.withMonument(temp.resolve("world")), new InMemoryBlueMapMap("overworld", shared));
+        AddonLifecycle lifecycle = lifecycle(folder);
+
+        lifecycle.onEnable(commandLine);
+        lifecycle.onDisable(commandLine);
+
+        assertEquals(AddonFolder.scannerId(folder), assertOk(LayerStore.readManifest(shared)).scannerId());
+        assertOk(LayerStore.readLayers(shared));
+    }
+
+    @Test
     void aResetFileMakesTheNextScanStartFromZero() throws IOException {
         Path folder = addonFolder("addon", null);
         FakeBlueMap commandLine = api(false, TestWorlds.withMonument(temp.resolve("world")), new InMemoryBlueMapMap("overworld"));
@@ -362,6 +408,14 @@ class AddonLifecycleTest {
             assertFalse(waiting.isAlive(), "the wait ended after the current chunk");
         }
         assertTrue(map.getMarkerSets().isEmpty());
+    }
+
+    private static byte[] gzip(String text) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try (GZIPOutputStream gzip = new GZIPOutputStream(out)) {
+            gzip.write(text.getBytes(StandardCharsets.UTF_8));
+        }
+        return out.toByteArray();
     }
 
     private static Set<String> listing(Path folder) throws IOException {
