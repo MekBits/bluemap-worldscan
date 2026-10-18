@@ -17,6 +17,18 @@ jobs:
         with:
           distribution: temurin
           java-version: 25
+      - name: Check that the tag matches the project version
+        run: |
+          set -eu
+          version=$(sed -n 's/^version=//p' gradle.properties)
+          if [ -z "$version" ]; then
+            echo "gradle.properties has no version line"; exit 1
+          fi
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "The tag is $GITHUB_REF_NAME but gradle.properties says version=$version, so the jar would be named bluemap-worldscan-$version.jar."
+            echo "Delete the tag, set version in gradle.properties, and tag the commit as v<version>."
+            exit 1
+          fi
       - name: Build
         run: ./gradlew build
       - name: Check the shadow jar
