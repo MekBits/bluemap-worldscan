@@ -305,10 +305,10 @@ You need a new release of the addon when:
 - a new Minecraft version adds structures. Until then they are shown in a layer named from their id,
   with no icon, and listed as unknown in the log.
 
-A stored layers file or manifest in a format a running instance does not know is left alone: the
-instance keeps the layers it shows and logs `update bluemap-worldscan on this instance`. A scanning
-instance that finds such files in a map's storage stores nothing for that map and logs a warning,
-so an old addon never replaces the layers of a newer one.
+A stored layers file or manifest in a format newer than the running instance knows is left alone:
+the instance keeps the layers it shows and logs `update bluemap-worldscan on this instance`. A
+scanning instance stores nothing for a map whose storage holds a format newer than it knows, and
+logs a warning, so an old addon never replaces the layers of a newer one.
 
 ## Build
 

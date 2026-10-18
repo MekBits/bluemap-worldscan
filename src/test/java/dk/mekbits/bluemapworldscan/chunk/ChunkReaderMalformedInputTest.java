@@ -77,7 +77,7 @@ class ChunkReaderMalformedInputTest {
 
     @Test
     void aByteArrayLargerThanTheLimitIsRejectedBeforeItIsRead() throws IOException {
-        // Well-formed, and 20 MiB is above the 16 MiB limit but below the 64 MiB it used to be.
+        // A well-formed document, only larger than the 16 MiB limit.
         InputStream document = documentWithByteArray(20 << 20);
 
         assertThrows(IOException.class, () -> ChunkReader.read(document));
