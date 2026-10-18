@@ -22,11 +22,15 @@ import org.jetbrains.annotations.Nullable;
  * than expected counts as missing. Two layouts exist. Up to DataVersion 2841 everything sits under
  * a {@code Level} compound; from 2842 it sits in the root. Biomes are numbers per cell up to
  * DataVersion 2831 ({@code Level.Biomes}) and palettes of names per section from 2832.
+ *
+ * <p>A structure start or biome whose id is not a valid resource location is skipped, not the
+ * whole chunk: an id ends up in the stored layers and in the log, so only what Minecraft accepts
+ * as an id gets through.
  */
 public final class ChunkReader {
 
     /** The largest NBT document accepted; also bounds what a corrupt length may make the reader allocate. */
-    public static final long MAX_NBT_BYTES = 64L << 20;
+    public static final long MAX_NBT_BYTES = 16L << 20;
 
     private static final int FIRST_1_13_DATA_VERSION = 1466;
     private static final int FIRST_PALETTE_BIOMES_DATA_VERSION = 2832;
@@ -125,7 +129,7 @@ public final class ChunkReader {
     /**
      * One structure start, or null when it is not one the game would load: the placeholder old
      * chunks store for structures without a start, a start without an id, or one without a piece
-     * that has a bounding box.
+     * that has a bounding box, or one whose id is not a valid resource location.
      */
     private static @Nullable FoundStructure readStart(String key, CompoundBinaryTag start, int dataVersion) {
         String id = start.getString("id", null);
@@ -154,6 +158,9 @@ public final class ChunkReader {
         }
 
         String structureId = StructureIds.current(key, dataVersion);
+        if (!ResourceNames.isValid(structureId)) {
+            return null;
+        }
         return new FoundStructure(structureId, box, structureId.equals(StructureIds.END_CITY) ? shipBox : null);
     }
 
@@ -194,6 +201,9 @@ public final class ChunkReader {
                     continue;
                 }
                 String id = BiomeIds.current(name, -1, dataVersion);
+                if (!ResourceNames.isValid(id)) {
+                    continue;
+                }
                 biomes.add(id);
                 if (!BiomeIds.known(id)) {
                     unknownIds.add(id);

@@ -202,6 +202,39 @@ class ChunkReaderSyntheticTest {
     }
 
     @Test
+    void idsThatAreNoResourceLocationsAreSkippedWithoutLosingTheChunk_synthetic() throws IOException {
+        CompoundBinaryTag chunk = rootLayout(4903).putString("Status", "minecraft:full")
+                .put("structures", CompoundBinaryTag.builder()
+                        .put("starts", starts(
+                                "pack:Big Tower", start("pack:Big Tower", piece(null, 0, 0, 0, 5, 5, 5)),
+                                "pack:tower\u001b[31m", start("pack:tower", piece(null, 0, 0, 0, 5, 5, 5)),
+                                "a:b:c", start("a:b:c", piece(null, 0, 0, 0, 5, 5, 5)),
+                                "minecraft:igloo", start("minecraft:igloo", piece(null, 100, 60, 100, 107, 70, 107))))
+                        .build())
+                .put("sections", sections(List.of("minecraft:plains", "Pack:Bad Biome", "pack:cave\n", "pack:crystal_caves/deep.v-2")))
+                .build();
+
+        ChunkInfo info = read(chunk);
+
+        assertEquals(List.of("minecraft:igloo"), structureIds(info));
+        assertEquals(Set.of(), info.unknownStructureIds());
+        assertEquals(Set.of("minecraft:plains", "pack:crystal_caves/deep.v-2"), info.biomes());
+        assertEquals(Set.of("pack:crystal_caves/deep.v-2"), info.unknownBiomeIds());
+    }
+
+    @Test
+    void aStartKeyOfAnOldChunkIsCheckedAfterItIsLowerCased_synthetic() throws IOException {
+        CompoundBinaryTag.Builder level = level().putString("Status", "fullchunk")
+                .put("Structures", CompoundBinaryTag.builder()
+                        .put("Starts", starts(
+                                "Village", start("minecraft:village", piece(null, 0, 60, 0, 10, 70, 10)),
+                                "Odd Name", start("minecraft:village", piece(null, 0, 60, 0, 10, 70, 10))))
+                        .build());
+
+        assertEquals(List.of("minecraft:village_plains"), structureIds(read(levelLayout(1519, level))));
+    }
+
+    @Test
     void aChunkWithoutADataVersionIsPre1_13_synthetic() throws IOException {
         ChunkInfo info = read(CompoundBinaryTag.builder().put("Level", level().build()).build());
 

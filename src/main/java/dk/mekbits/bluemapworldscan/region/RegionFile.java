@@ -126,7 +126,8 @@ public final class RegionFile {
      * Opens the decompressed NBT bytes of a chunk. The caller closes the stream.
      *
      * @throws ChunkReadException the chunk is absent, its offset or length is outside the file or
-     *     0, its compression is unknown, or its external file is missing
+     *     0, its sector count is 0 or too small for its length, its compression is unknown, or its
+     *     external file is missing
      */
     public InputStream openChunk(int index) throws ChunkReadException {
         Objects.checkIndex(index, CHUNKS);
@@ -137,6 +138,10 @@ public final class RegionFile {
             throw new ChunkReadException("chunk " + index + " is not present");
         }
         long position = (long) (entry >>> 8) * SECTOR_BYTES;
+        int sectors = entry & 0xFF;
+        if (sectors == 0) {
+            throw new ChunkReadException("chunk " + index + " occupies no sectors");
+        }
 
         try (FileChannel channel = FileChannel.open(file, StandardOpenOption.READ)) {
             long size = channel.size();
@@ -151,6 +156,10 @@ public final class RegionFile {
 
             if (length <= 0) {
                 throw new ChunkReadException("chunk " + index + " has length " + length);
+            }
+            // Minecraft rejects the same: a chunk is read into the room its sectors give it, no more.
+            if (length - 1L > (long) sectors * SECTOR_BYTES - CHUNK_HEADER_BYTES) {
+                throw new ChunkReadException("chunk " + index + " has length " + length + " but occupies " + sectors + " sectors");
             }
             boolean external = (type & EXTERNAL_FLAG) != 0;
             int compression = type & ~EXTERNAL_FLAG;

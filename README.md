@@ -251,7 +251,8 @@ standard error on every platform. Look for:
   read N, pre-1.13 N, unsupported compression N; DataVersions ...` at the end of each world's
   pass. The DataVersions are counted in six buckets: `< 1466`, `1466-2199`, `2200-2831`,
   `2832-2843`, `2844-2969` and `>= 2970`. At debug level every distinct DataVersion is listed
-  too. Structure and biome ids the addon does not know are listed at the end of the line.
+  too. Structure and biome ids the addon does not know are listed at the end of the line: the first
+  20 of each kind, then how many more.
 - `stored generation G of the layers of map <id> (N markers)` when new layers were stored, or
   `the layers of map <id> are unchanged`.
 - `showing generation G of map <id> (N layers)` when an instance puts a stored generation on its

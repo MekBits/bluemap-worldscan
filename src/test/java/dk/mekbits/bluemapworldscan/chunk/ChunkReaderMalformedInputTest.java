@@ -58,25 +58,36 @@ class ChunkReaderMalformedInputTest {
         assertUnreadable(bytes.toByteArray());
     }
 
-    @Test
-    void aByteArrayLargerThanTheLimitIsRejectedBeforeItIsRead() throws IOException {
-        int declared = 100 << 20;
+    /** A complete, well-formed document: a root compound holding one byte array of zeros. */
+    private static InputStream documentWithByteArray(int length) throws IOException {
         ByteArrayOutputStream head = new ByteArrayOutputStream();
         DataOutputStream out = rootWithTag(head, BYTE_ARRAY, "Biomes");
-        out.writeInt(declared);
+        out.writeInt(length);
         InputStream zeros = new InputStream() {
-            private int remaining = declared;
+            private int remaining = length;
 
             @Override
             public int read() {
                 return remaining-- > 0 ? 0 : -1;
             }
         };
-        // Without the limit this is a complete, readable 100 MiB document.
-        InputStream document = new SequenceInputStream(
+        return new SequenceInputStream(
                 new SequenceInputStream(new ByteArrayInputStream(head.toByteArray()), zeros), new ByteArrayInputStream(new byte[] {0}));
+    }
+
+    @Test
+    void aByteArrayLargerThanTheLimitIsRejectedBeforeItIsRead() throws IOException {
+        // Well-formed, and 20 MiB is above the 16 MiB limit but below the 64 MiB it used to be.
+        InputStream document = documentWithByteArray(20 << 20);
 
         assertThrows(IOException.class, () -> ChunkReader.read(document));
+    }
+
+    @Test
+    void aDocumentJustUnderTheLimitIsRead() throws IOException {
+        InputStream document = documentWithByteArray(15 << 20);
+
+        assertDoesNotThrow(() -> ChunkReader.read(document));
     }
 
     @Test

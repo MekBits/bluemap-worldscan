@@ -11,6 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -152,6 +153,59 @@ class RegionFileTest {
 
         assertTrue(region.present(5));
         assertThrows(ChunkReadException.class, () -> region.openChunk(5));
+    }
+
+    /** Replaces the sector count in the low byte of a chunk's header entry. */
+    private static void setSectorCount(Path file, int index, int sectors) throws IOException {
+        try (FileChannel channel = FileChannel.open(file, StandardOpenOption.READ, StandardOpenOption.WRITE)) {
+            ByteBuffer entry = ByteBuffer.allocate(4);
+            channel.read(entry, index * 4L);
+            entry.flip();
+            int updated = (entry.getInt() & 0xFFFFFF00) | sectors;
+            channel.write(ByteBuffer.allocate(4).putInt(updated).flip(), index * 4L);
+        }
+    }
+
+    @Test
+    void aChunkWithSectorCountZeroIsAChunkReadException() throws IOException {
+        Path file = dir.resolve("r.0.0.mca");
+        TestRegions.write(file, Map.of(5, new TestChunk(nbt, TIMESTAMP, 2, false)));
+        setSectorCount(file, 5, 0);
+
+        RegionFile region = RegionFile.open(file);
+
+        assertTrue(region.present(5));
+        assertThrows(ChunkReadException.class, () -> region.openChunk(5));
+    }
+
+    @Test
+    void aLengthThatDoesNotFitItsSectorsIsAChunkReadExceptionEvenWhenTheFileHoldsTheData() throws IOException {
+        Path file = dir.resolve("r.0.0.mca");
+        byte[] twoSectors = new byte[5000];
+        TestRegions.write(file, Map.of(
+                5, new TestChunk(twoSectors, TIMESTAMP, 3, false),
+                6, new TestChunk(nbt, TIMESTAMP, 3, false)));
+        assertEquals(2, RegionFile.open(file).header().offsets()[5] & 0xFF);
+        setSectorCount(file, 5, 1);
+
+        RegionFile region = RegionFile.open(file);
+
+        ChunkReadException e = assertThrows(ChunkReadException.class, () -> region.openChunk(5));
+        assertTrue(e.getMessage().contains("sectors"), e.getMessage());
+        assertArrayEquals(nbt, read(region.openChunk(6)));
+    }
+
+    @Test
+    void aLengthThatFillsItsSectorsExactlyIsRead() throws IOException {
+        Path file = dir.resolve("r.0.0.mca");
+        byte[] filling = new byte[2 * 4096 - 5];
+        System.arraycopy(nbt, 0, filling, 0, nbt.length);
+        TestRegions.write(file, Map.of(5, new TestChunk(filling, TIMESTAMP, 3, false)));
+
+        RegionFile region = RegionFile.open(file);
+
+        assertEquals(2, region.header().offsets()[5] & 0xFF);
+        assertArrayEquals(filling, read(region.openChunk(5)));
     }
 
     @Test

@@ -2,6 +2,7 @@ package dk.mekbits.bluemapworldscan.scan;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.SortedMap;
 import java.util.SortedSet;
@@ -45,6 +46,9 @@ public record ScanReport(
         SortedSet<String> unknownStructureIds,
         SortedSet<String> unknownBiomeIds) {
 
+    /** A world can hold any number of ids that are none of ours; the log line lists this many. */
+    static final int MAX_LISTED_IDS = 20;
+
     static final String[] BUCKET_LABELS = {
         "< 1466", "1466-2199", "2200-2831", "2832-2843", "2844-2969", ">= 2970"
     };
@@ -72,12 +76,21 @@ public record ScanReport(
             text.append("; DataVersions ").append(buckets);
         }
         if (!unknownStructureIds.isEmpty()) {
-            text.append("; unknown structure ids ").append(unknownStructureIds);
+            text.append("; unknown structure ids ").append(listed(unknownStructureIds));
         }
         if (!unknownBiomeIds.isEmpty()) {
-            text.append("; unknown biome ids ").append(unknownBiomeIds);
+            text.append("; unknown biome ids ").append(listed(unknownBiomeIds));
         }
         return text.toString();
+    }
+
+    /** The ids for a log line: the first few, then how many more there are. */
+    private static String listed(SortedSet<String> ids) {
+        if (ids.size() <= MAX_LISTED_IDS) {
+            return ids.toString();
+        }
+        List<String> first = ids.stream().limit(MAX_LISTED_IDS).toList();
+        return first + " and " + (ids.size() - MAX_LISTED_IDS) + " more";
     }
 
     /** Collects the counts while a scan runs. */
