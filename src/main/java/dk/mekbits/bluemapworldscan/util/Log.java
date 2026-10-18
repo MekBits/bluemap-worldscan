@@ -12,6 +12,15 @@ public final class Log {
     private Log() {
     }
 
+    public static void debug(String message) {
+        LOGGER.log(System.Logger.Level.DEBUG, PREFIX + message);
+    }
+
+    /** Whether debug lines are logged, for lines that are costly to build. */
+    public static boolean isDebugEnabled() {
+        return LOGGER.isLoggable(System.Logger.Level.DEBUG);
+    }
+
     public static void info(String message) {
         LOGGER.log(System.Logger.Level.INFO, PREFIX + message);
     }

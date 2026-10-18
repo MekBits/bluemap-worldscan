@@ -78,8 +78,7 @@ public final class AddonLifecycle {
     /** Stops a running scan; the JVM's shutdown hook calls it. */
     public void cancelScan() {
         if (!lastEnable.isDone()) {
-            // The JVM's own shutdown closes the log handlers of java.util.logging, so what is logged
-            // from here on may be lost; this line goes to stderr directly.
+            // The JVM closes the java.util.logging handlers on shutdown, so this line goes to stderr directly.
             System.err.println("[bluemap-worldscan] the JVM is shutting down; cancelling the running scan");
         }
         scanCancel.cancel();

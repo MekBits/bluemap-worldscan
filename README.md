@@ -35,6 +35,8 @@ and the `biomes` settings are read from the config, but they change nothing yet.
 - **Stores the finished layers once per map.** After a complete pass over a world, the scanning
   instance stores the layers in the asset storage of each map of that world. Every BlueMap instance
   that uses that storage and runs the addon shows the same layers from it.
+- **Covers the whole world.** The layers hold every structure found in the world, also when a map's
+  render area is limited: the addon does not read BlueMap's render bounds.
 
 The layers appear after the first complete pass. On a large world that takes hours (see
 [Performance](#performance)), and nothing is stored before the pass is done.
@@ -56,9 +58,10 @@ Use the same addon version on every BlueMap instance that uses the same map stor
 2. Put `bluemap-worldscan-<version>.jar` in `<bluemap config>/packs/`.
 3. Start BlueMap.
 
-`<bluemap config>` is BlueMap's config folder: `config/bluemap/` for the Fabric mod, `/app/config/`
-in the BlueMap CLI container. The addon keeps its own files in `bluemap-worldscan/` next to
-`packs/`, not inside it, because BlueMap treats every file in `packs/` as a resource pack.
+`<bluemap config>` is BlueMap's config folder: `config/bluemap/` for the Fabric, Forge and NeoForge
+mods, `plugins/BlueMap/` for the Paper and Spigot plugin, `/app/config/` in the BlueMap CLI
+container. The addon keeps its own files in `bluemap-worldscan/` next to `packs/`, not inside it,
+because BlueMap treats every file in `packs/` as a resource pack.
 
 **To update, replace the jar. Never leave two versions in `packs/`.** BlueMap fails to start when
 two jars have the same addon id. Then restart the whole server or CLI process: `/bluemap reload`
@@ -94,7 +97,7 @@ A few consequences:
 - **`bluemap-cli --markers` wipes the layers from storage.** It writes only the marker sets of the
   map configs to storage, so the worldscan layers are gone from the stored marker state, and from
   a `-w`-only or static map, until an instance that runs the addon saves again. A plugin does that
-  every 10 minutes, and a CLI render run does it at its end.
+  every 10 minutes, and a CLI render run every 2 minutes and at its end.
 - The scanning instance's config decides what the layers hold. The display settings below are read
   there only.
 
@@ -289,8 +292,9 @@ is a problem for a layer, put it in `structures.disabledLayers`.
 
 These stay with the scanning instance, in its addon folder, and are never put in the storage: the
 scan state (the save time of every chunk, the structures of layers you disabled, the biomes of each
-chunk), the `scanner-id` file, the config and the client jar. Instances that do not scan read no
-world files and download nothing.
+chunk), the config, the client jar and the `scanner-id` file. The value in `scanner-id` is the
+scanner id in the public manifest. Instances that do not scan read no world files and download
+nothing.
 
 ## When a new release is needed
 

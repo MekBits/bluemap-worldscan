@@ -216,8 +216,7 @@ public final class RegionFile {
     private InputStream openExternal(int index, int compression) throws IOException {
         Path external = externalPath(index);
 
-        // The stamp is read before the content: a file replaced in between then shows up as
-        // changed when the scanner compares stamps, whereas the other order would hide it.
+        // The stamp is read before the content, so a file replaced in between shows up as changed.
         BasicFileAttributes attributes;
         InputStream raw;
         try {

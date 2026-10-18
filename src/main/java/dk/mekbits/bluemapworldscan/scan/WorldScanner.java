@@ -29,6 +29,7 @@ import dk.mekbits.bluemapworldscan.region.UnsupportedCompressionException;
 import dk.mekbits.bluemapworldscan.state.RegionEntry;
 import dk.mekbits.bluemapworldscan.state.ScanState;
 import dk.mekbits.bluemapworldscan.state.StructureEntry;
+import dk.mekbits.bluemapworldscan.util.Log;
 import org.jetbrains.annotations.Nullable;
 
 /**
@@ -44,8 +45,6 @@ import org.jetbrains.annotations.Nullable;
  * Any other chunk keeps its old entries and old timestamp and is read again on the next scan.
  */
 public final class WorldScanner {
-
-    private static final System.Logger LOG = System.getLogger("dk.mekbits.bluemapworldscan.scan");
 
     private static final int CHUNKS = 1024;
     private static final int BIOME_WORDS = CHUNKS / Long.SIZE;
@@ -100,7 +99,7 @@ public final class WorldScanner {
         try {
             files = listRegionFiles(regionFolder);
         } catch (IOException e) {
-            LOG.log(System.Logger.Level.WARNING, "[bluemap-worldscan] cannot list " + regionFolder + ": " + e);
+            Log.warn("cannot list " + regionFolder + ": " + e);
             return skipped(previous);
         }
 
@@ -127,7 +126,7 @@ public final class WorldScanner {
             try {
                 region = RegionFile.open(file.getValue());
             } catch (IOException e) {
-                LOG.log(System.Logger.Level.WARNING, "[bluemap-worldscan] cannot open " + file.getValue() + ": " + e);
+                Log.warn("cannot open " + file.getValue() + ": " + e);
                 total.failed++;
                 processed++;
                 continue;
@@ -148,11 +147,9 @@ public final class WorldScanner {
         }
 
         ScanReport report = total.build();
-        LOG.log(System.Logger.Level.INFO, "[bluemap-worldscan] " + (cancelled ? "cancelled scan of " : "scanned ")
-                + dimensionFolder + ": " + report.summary());
-        if (LOG.isLoggable(System.Logger.Level.DEBUG)) {
-            LOG.log(System.Logger.Level.DEBUG, "[bluemap-worldscan] DataVersions of " + dimensionFolder + ": "
-                    + report.dataVersions());
+        Log.info((cancelled ? "cancelled scan of " : "scanned ") + dimensionFolder + ": " + report.summary());
+        if (Log.isDebugEnabled()) {
+            Log.debug("DataVersions of " + dimensionFolder + ": " + report.dataVersions());
         }
         return new ScanOutcome(snapshot(previous, regions), report, false, cancelled);
     }
@@ -236,7 +233,7 @@ public final class WorldScanner {
             try {
                 second = region.readHeaderAgain();
             } catch (IOException e) {
-                LOG.log(System.Logger.Level.DEBUG, "[bluemap-worldscan] cannot read the header of " + file + " again: " + e);
+                Log.debug("cannot read the header of " + file + " again: " + e);
             }
         }
         Map<Integer, ChunkInfo> taken = new TreeMap<>();
@@ -271,15 +268,15 @@ public final class WorldScanner {
             return ChunkReader.read(in);
         } catch (UnsupportedCompressionException e) {
             tally.unsupportedCompression++;
-            LOG.log(System.Logger.Level.DEBUG, "[bluemap-worldscan] " + file.getFileName() + " chunk " + index + ": " + e.getMessage());
+            Log.debug(file.getFileName() + " chunk " + index + ": " + e.getMessage());
             return null;
         } catch (ChunkReadException e) {
             tally.failed++;
-            LOG.log(System.Logger.Level.DEBUG, "[bluemap-worldscan] " + file.getFileName() + " chunk " + index + ": " + e.getMessage());
+            Log.debug(file.getFileName() + " chunk " + index + ": " + e.getMessage());
             return null;
         } catch (IOException e) {
             tally.failed++;
-            LOG.log(System.Logger.Level.DEBUG, "[bluemap-worldscan] " + file.getFileName() + " chunk " + index + ": " + e);
+            Log.debug(file.getFileName() + " chunk " + index + ": " + e);
             return null;
         }
     }
