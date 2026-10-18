@@ -191,9 +191,10 @@ than 1000 blocks.
 
 The icons come from the vanilla textures in the Minecraft client jar. No Mojang asset is bundled.
 The scanning instance downloads the client jar of the newest release from Mojang's version
-manifest, checks its SHA-1 and keeps it in `client-jar/`. It stores one small icon per layer in the
-asset storage of each map. If the download fails and there is no kept jar, the layers have no
-icons and BlueMap draws its default marker. Instances that do not scan download nothing.
+manifest, checks its SHA-1 and keeps it in `client-jar/`. It only follows https URLs under
+`mojang.com` and refuses a jar over 200 MB. It stores one small icon per layer in the asset
+storage of each map. If the download fails and there is no kept jar, the layers have no icons and
+BlueMap draws its default marker. Instances that do not scan download nothing.
 
 ## What every browser has to load
 

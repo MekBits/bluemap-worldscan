@@ -26,6 +26,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 /** Runs {@link ClientJar} against a local server that plays Mojang's version manifest. */
 class ClientJarTest {
@@ -37,7 +39,11 @@ class ClientJarTest {
     Path folder;
 
     private HttpServer server;
+    private final AtomicInteger versionRequests = new AtomicInteger();
     private final AtomicInteger jarDownloads = new AtomicInteger();
+    private volatile String jarLocation = "/client.jar";
+    private volatile String redirectTo;
+    private volatile boolean chunked;
     private volatile String latest = "9.9";
     private volatile byte[] served = JAR_9_9;
     private volatile String published = Sha1.hex(JAR_9_9);
@@ -46,10 +52,27 @@ class ClientJarTest {
     void startServer() throws IOException {
         server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
         server.createContext("/manifest.json", exchange -> reply(exchange, 200, manifest().getBytes(StandardCharsets.UTF_8)));
-        server.createContext("/version.json", exchange -> reply(exchange, 200, version().getBytes(StandardCharsets.UTF_8)));
+        server.createContext("/version.json", exchange -> {
+            versionRequests.incrementAndGet();
+            reply(exchange, 200, version().getBytes(StandardCharsets.UTF_8));
+        });
         server.createContext("/client.jar", exchange -> {
             jarDownloads.incrementAndGet();
-            reply(exchange, 200, served);
+            if (redirectTo != null) {
+                exchange.getResponseHeaders().add("Location", redirectTo);
+                reply(exchange, 302, new byte[0]);
+            } else if (chunked) {
+                exchange.sendResponseHeaders(200, 0);
+                try (OutputStream out = exchange.getResponseBody()) {
+                    out.write(served);
+                }
+            } else {
+                reply(exchange, 200, served);
+            }
+        });
+        server.createContext("/moved.jar", exchange -> {
+            exchange.getResponseHeaders().add("Location", "/client.jar");
+            reply(exchange, 302, new byte[0]);
         });
         server.start();
     }
@@ -70,7 +93,8 @@ class ClientJarTest {
     }
 
     private String version() {
-        return "{\"downloads\":{\"client\":{\"sha1\":\"" + published + "\",\"url\":\"" + base() + "/client.jar\"}}}";
+        String url = jarLocation.startsWith("/") ? base() + jarLocation : jarLocation;
+        return "{\"downloads\":{\"client\":{\"sha1\":\"" + published + "\",\"url\":\"" + url + "\"}}}";
     }
 
     private static void reply(HttpExchange exchange, int status, byte[] body) throws IOException {
@@ -80,8 +104,15 @@ class ClientJarTest {
         }
     }
 
+    /** Trusts the local server on top of what Mojang's URLs need, so the tests need no network. */
+    private ClientJar clientJar(long maxJarBytes) {
+        return new ClientJar(
+                folder, URI.create(base() + "/manifest.json"),
+                uri -> "127.0.0.1".equals(uri.getHost()) || ClientJar.isMojangUrl(uri), maxJarBytes);
+    }
+
     private ClientJar clientJar() {
-        return new ClientJar(folder, URI.create(base() + "/manifest.json"));
+        return clientJar(ClientJar.MAX_JAR_BYTES);
     }
 
     private List<String> filesInFolder() throws IOException {
@@ -150,10 +181,104 @@ class ClientJarTest {
     }
 
     @Test
-    void aReleaseNamePointingOutOfTheFolderIsRejected() {
-        latest = "../escape";
+    void aReleaseNamePointingOutOfTheFolderIsRejectedBeforeAnythingIsDownloaded() throws IOException {
+        latest = "../../escape";
 
-        assertTrue(clientJar().ensure().isEmpty());
-        assertFalse(Files.exists(folder.resolveSibling("escape.jar")));
+        try (LogCapture log = new LogCapture()) {
+            assertTrue(clientJar().ensure().isEmpty());
+            assertTrue(log.warnings().stream().anyMatch(message -> message.contains("unexpected version name")), log.warnings().toString());
+        }
+        assertEquals(0, versionRequests.get(), "the version file of such a release is not even requested");
+        assertEquals(0, jarDownloads.get());
+        assertEquals(List.of(), filesInFolder());
+        assertFalse(Files.exists(folder.resolve("escape.jar")));
+        assertFalse(Files.exists(folder.getParent().resolve("escape.jar")));
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+        "https://piston-data.mojang.com/v1/objects/abc/client.jar, true",
+        "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json, true",
+        "HTTPS://Piston-Data.Mojang.com/client.jar, true",
+        "http://piston-data.mojang.com/client.jar, false",
+        "https://example.com/client.jar, false",
+        "https://mojang.com.example.com/client.jar, false",
+        "https://evil-mojang.com/client.jar, false",
+        "https://piston-data.mojang.com@example.com/client.jar, false",
+        "file:///etc/passwd, false",
+        "client.jar, false"})
+    void onlyHttpsUrlsUnderMojangDotComAreTrusted(String url, boolean trusted) {
+        assertEquals(trusted, ClientJar.isMojangUrl(URI.create(url)));
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+        "http://piston-data.mojang.com/client.jar",
+        "https://example.com/client.jar"})
+    void aJarUrlThatIsNotMojangsIsNotRequested(String url) throws IOException {
+        jarLocation = url;
+
+        try (LogCapture log = new LogCapture()) {
+            assertTrue(clientJar().ensure().isEmpty());
+            assertTrue(log.warnings().stream().anyMatch(message -> message.contains("refusing to download")), log.warnings().toString());
+        }
+        assertEquals(1, versionRequests.get());
+        assertEquals(List.of(), filesInFolder());
+    }
+
+    @Test
+    void aVersionFileUrlThatIsNotTrustedIsNotRequested() {
+        ClientJar strict = new ClientJar(
+                folder, URI.create(base() + "/manifest.json"),
+                uri -> "127.0.0.1".equals(uri.getHost()) && uri.getPath().equals("/manifest.json"), ClientJar.MAX_JAR_BYTES);
+
+        assertTrue(strict.ensure().isEmpty());
+
+        assertEquals(0, versionRequests.get());
+    }
+
+    @Test
+    void aRedirectToAForeignHostIsNotFollowed() throws IOException {
+        redirectTo = "https://example.com/client.jar";
+
+        try (LogCapture log = new LogCapture()) {
+            assertTrue(clientJar().ensure().isEmpty());
+            assertTrue(log.warnings().stream().anyMatch(message -> message.contains("refusing to download")), log.warnings().toString());
+        }
+        assertEquals(List.of(), filesInFolder());
+    }
+
+    @Test
+    void aRedirectToATrustedUrlIsFollowed() {
+        jarLocation = "/moved.jar";
+
+        assertEquals(folder.resolve("client-9.9.jar"), clientJar().ensure().orElseThrow());
+    }
+
+    @Test
+    void aJarThatDeclaresMoreThanTheLimitIsNotDownloaded() throws IOException {
+        try (LogCapture log = new LogCapture()) {
+            assertTrue(clientJar(JAR_9_9.length - 1).ensure().isEmpty());
+            assertTrue(log.warnings().stream().anyMatch(message -> message.contains("larger than")), log.warnings().toString());
+        }
+        assertEquals(List.of(), filesInFolder());
+    }
+
+    @Test
+    void aJarThatTurnsOutLargerThanTheLimitWithoutDeclaringItIsCutOffAndRejected() throws IOException {
+        chunked = true;
+
+        try (LogCapture log = new LogCapture()) {
+            assertTrue(clientJar(JAR_9_9.length - 1).ensure().isEmpty());
+            assertTrue(log.warnings().stream().anyMatch(message -> message.contains("larger than")), log.warnings().toString());
+        }
+        assertEquals(List.of(), filesInFolder());
+    }
+
+    @Test
+    void aJarOfExactlyTheLimitIsAccepted() {
+        chunked = true;
+
+        assertTrue(clientJar(JAR_9_9.length).ensure().isPresent());
     }
 }
