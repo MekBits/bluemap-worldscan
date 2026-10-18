@@ -73,6 +73,24 @@ tasks.register<JavaExec>("reduceFixtures") {
     }
 }
 
+// Measures the live/markers.json size of a world backup without extracting it. Usage:
+// ./gradlew measureBackup -Pbackup=<world backup .tar.gz> -Pdimension=<overworld|the_nether|the_end> -PmapId=<map id>
+// (add -PstateOut=<file> to keep the scan state)
+tasks.register<JavaExec>("measureBackup") {
+    description = "Prints the size of the live/markers.json that the structure layers of a world backup give."
+    group = "other"
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass = "dk.mekbits.bluemapworldscan.testsupport.MeasureFromBackup"
+    maxHeapSize = "2g"
+    doFirst {
+        fun required(name: String) = providers.gradleProperty(name).orNull
+            ?: throw GradleException("pass -P$name=<value>")
+        args(listOfNotNull(
+            required("backup"), required("dimension"), required("mapId"),
+            providers.gradleProperty("stateOut").orNull))
+    }
+}
+
 tasks.jar {
     archiveClassifier = "plain"
 }
