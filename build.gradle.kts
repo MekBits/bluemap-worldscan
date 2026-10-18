@@ -100,6 +100,10 @@ val libPackage = "dk.mekbits.bluemapworldscan.lib"
 tasks.shadowJar {
     archiveClassifier = ""
 
+    from(files("LICENSE", "THIRD_PARTY_NOTICES.md")) {
+        into("META-INF")
+    }
+
     manifest {
         attributes("Implementation-Version" to project.version.toString())
     }

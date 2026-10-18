@@ -97,7 +97,7 @@ Bundled. Reads and writes the NBT of chunks and of the addon's scan state
 
 ## lz4-java 1.10.1 (Apache-2.0)
 
-Bundled, the pure Java decompressor only (<https://github.com/yawkat/lz4-java>). Reads chunks
+Bundled without its native libraries (<https://github.com/yawkat/lz4-java>). Reads chunks
 compressed with LZ4.
 
 Copyright 2020 Adrien Grand and the lz4-java contributors.
