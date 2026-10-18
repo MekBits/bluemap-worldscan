@@ -100,6 +100,10 @@ val libPackage = "dk.mekbits.bluemapworldscan.lib"
 tasks.shadowJar {
     archiveClassifier = ""
 
+    manifest {
+        attributes("Implementation-Version" to project.version.toString())
+    }
+
     relocate("com.google.gson", "$libPackage.gson")
     relocate("net.kyori", "$libPackage.kyori")
     relocate("net.jpountz", "$libPackage.jpountz")

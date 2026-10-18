@@ -69,4 +69,34 @@ public final class SyntheticChunks {
         }
         return sections.build();
     }
+
+    /** The box of the structure that {@link #chunk} puts in a chunk: the whole chunk, from y 60 to 70. */
+    public static int[] chunkBox(int chunkX, int chunkZ) {
+        return new int[] {chunkX * 16, 60, chunkZ * 16, chunkX * 16 + 15, 70, chunkZ * 16 + 15};
+    }
+
+    /**
+     * A chunk of the given DataVersion at the given position: the Level layout up to 2841, the root
+     * layout from 2842. Only the root layout carries the given biome and structures, each a start
+     * with one piece that fills the chunk ({@link #chunkBox}).
+     */
+    public static byte[] chunk(int dataVersion, int chunkX, int chunkZ, String biome, String... structureIds) {
+        boolean level = dataVersion <= 2841;
+        CompoundBinaryTag.Builder root = CompoundBinaryTag.builder().putInt("DataVersion", dataVersion);
+        CompoundBinaryTag.Builder content = level ? CompoundBinaryTag.builder() : root;
+        content.putInt("xPos", chunkX)
+                .putInt("zPos", chunkZ)
+                .putString("Status", dataVersion < 1911 ? "fullchunk" : "full");
+        if (level) {
+            root.put("Level", content.build());
+        } else {
+            CompoundBinaryTag.Builder starts = CompoundBinaryTag.builder();
+            for (String id : structureIds) {
+                starts.put(id, start(id, piece(null, chunkBox(chunkX, chunkZ))));
+            }
+            content.put("structures", CompoundBinaryTag.builder().put("starts", starts.build()).build());
+            content.put("sections", sections(List.of(biome)));
+        }
+        return toBytes(root.build());
+    }
 }

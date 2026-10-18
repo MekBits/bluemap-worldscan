@@ -67,36 +67,8 @@ class WorldScannerTest {
         return folder.resolve(name);
     }
 
-    private static int[] box(int chunkX, int chunkZ) {
-        return new int[] {chunkX * 16, 60, chunkZ * 16, chunkX * 16 + 15, 70, chunkZ * 16 + 15};
-    }
-
-    /**
-     * A chunk of the given DataVersion at the given position: the Level layout up to 2841, the root
-     * layout from 2842. Only the root layout carries the given biome and structures.
-     */
-    private static byte[] chunk(int dataVersion, int chunkX, int chunkZ, String biome, String... structureIds) {
-        boolean level = dataVersion <= 2841;
-        CompoundBinaryTag.Builder root = CompoundBinaryTag.builder().putInt("DataVersion", dataVersion);
-        CompoundBinaryTag.Builder content = level ? CompoundBinaryTag.builder() : root;
-        content.putInt("xPos", chunkX)
-                .putInt("zPos", chunkZ)
-                .putString("Status", dataVersion < 1911 ? "fullchunk" : "full");
-        if (level) {
-            root.put("Level", content.build());
-        } else {
-            CompoundBinaryTag.Builder starts = CompoundBinaryTag.builder();
-            for (String id : structureIds) {
-                starts.put(id, SyntheticChunks.start(id, SyntheticChunks.piece(null, box(chunkX, chunkZ))));
-            }
-            content.put("structures", CompoundBinaryTag.builder().put("starts", starts.build()).build());
-            content.put("sections", SyntheticChunks.sections(List.of(biome)));
-        }
-        return SyntheticChunks.toBytes(root.build());
-    }
-
     private static byte[] chunk(int chunkX, int chunkZ, String biome, String... structureIds) {
-        return chunk(4903, chunkX, chunkZ, biome, structureIds);
+        return SyntheticChunks.chunk(4903, chunkX, chunkZ, biome, structureIds);
     }
 
     /** A 1.12.2 chunk: a byte-array {@code Level.Biomes}, which the reader never looks at. */
@@ -182,7 +154,7 @@ class WorldScannerTest {
         assertEquals(List.of("minecraft:igloo"), structureIds(region, 0));
         assertEquals(List.of("minecraft:desert_pyramid"), structureIds(region, 1));
         assertEquals(List.of(), structureIds(region, 33));
-        assertArrayEquals(box(1, 0), region.structures().get(1).box());
+        assertArrayEquals(SyntheticChunks.chunkBox(1, 0), region.structures().get(1).box());
         assertNull(region.structures().get(1).endShipBox());
         assertEquals(List.of("minecraft:desert", "minecraft:plains"), keys(region.biomes()));
         assertArrayEquals(bits(0, 33), region.biomes().get("minecraft:plains"));
@@ -760,11 +732,11 @@ class WorldScannerTest {
     void theDataVersionBucketsAddUpToTheChunksReadAndCountedAsPre113() throws IOException {
         TestRegions.write(regionFile("r.0.0.mca"), Map.of(
                 index(0, 0), zlib(preThirteenChunk(0, 0), TS),
-                index(1, 0), zlib(chunk(1519, 1, 0, "minecraft:plains"), TS),
-                index(2, 0), zlib(chunk(2300, 2, 0, "minecraft:plains"), TS),
-                index(3, 0), zlib(chunk(2840, 3, 0, "minecraft:plains"), TS),
-                index(4, 0), zlib(chunk(2860, 4, 0, "minecraft:plains"), TS),
-                index(5, 0), zlib(chunk(4903, 5, 0, "minecraft:plains"), TS)));
+                index(1, 0), zlib(SyntheticChunks.chunk(1519, 1, 0, "minecraft:plains"), TS),
+                index(2, 0), zlib(SyntheticChunks.chunk(2300, 2, 0, "minecraft:plains"), TS),
+                index(3, 0), zlib(SyntheticChunks.chunk(2840, 3, 0, "minecraft:plains"), TS),
+                index(4, 0), zlib(SyntheticChunks.chunk(2860, 4, 0, "minecraft:plains"), TS),
+                index(5, 0), zlib(SyntheticChunks.chunk(4903, 5, 0, "minecraft:plains"), TS)));
 
         ScanReport report = scan(world, emptyState()).report();
 
