@@ -223,6 +223,25 @@ class ChunkReaderSyntheticTest {
     }
 
     @Test
+    void anIdLongerThanTheLimitIsSkippedLikeAnInvalidOne_synthetic() throws IOException {
+        String atLimit = "pack:" + "a".repeat(ResourceNames.MAX_LENGTH - 5);
+        String overLimit = atLimit + "a";
+        CompoundBinaryTag chunk = rootLayout(4903).putString("Status", "minecraft:full")
+                .put("structures", CompoundBinaryTag.builder()
+                        .put("starts", starts(
+                                atLimit, start(atLimit, piece(null, 0, 0, 0, 5, 5, 5)),
+                                overLimit, start(overLimit, piece(null, 0, 0, 0, 5, 5, 5))))
+                        .build())
+                .put("sections", sections(List.of(atLimit, overLimit)))
+                .build();
+
+        ChunkInfo info = read(chunk);
+
+        assertEquals(List.of(atLimit), structureIds(info));
+        assertEquals(Set.of(atLimit), info.biomes());
+    }
+
+    @Test
     void aStartKeyOfAnOldChunkIsCheckedAfterItIsLowerCased_synthetic() throws IOException {
         CompoundBinaryTag.Builder level = level().putString("Status", "fullchunk")
                 .put("Structures", CompoundBinaryTag.builder()
