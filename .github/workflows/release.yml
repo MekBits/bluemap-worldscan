@@ -5,15 +5,18 @@ on:
     tags:
       - 'v*'
 
-permissions:
-  contents: write
+permissions: {}
 
 jobs:
-  release:
+  build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-java@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: 25
@@ -32,31 +35,30 @@ jobs:
       - name: Build
         run: ./gradlew build
       - name: Check the shadow jar
-        run: |
-          set -eu
-          jars=$(find build/libs -name 'bluemap-worldscan-*.jar' ! -name '*-plain.jar')
-          if [ "$(echo "$jars" | wc -l)" -ne 1 ]; then
-            echo "expected exactly one shadow jar, found:"; echo "$jars"; exit 1
-          fi
-          entries=$(unzip -Z1 "$jars")
-          fail=0
-          check() {
-            if [ -n "$2" ]; then
-              echo "$1:"; echo "$2"; fail=1
-            fi
-          }
-          check "assets/ or data/ entries" "$(echo "$entries" | grep -E '^(assets|data)/' || true)"
-          check "native libraries" "$(echo "$entries" | grep -E '\.(so|dylib|dll|jnilib)$' || true)"
-          check "module-info.class entries" "$(echo "$entries" | grep -E '(^|/)module-info\.class$' || true)"
-          check "classes outside dk/mekbits/bluemapworldscan/" "$(echo "$entries" | grep -E '\.class$' | grep -v '^dk/mekbits/bluemapworldscan/' || true)"
-          if ! echo "$entries" | grep -qx 'bluemap.addon.json'; then
-            echo "bluemap.addon.json is not at the root of the jar"; fail=1
-          fi
-          exit "$fail"
+        run: bash .github/scripts/check-shadow-jar.sh
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bluemap-worldscan-jar
+          path: |
+            build/libs/bluemap-worldscan-*.jar
+            !build/libs/*-plain.jar
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: bluemap-worldscan-jar
+          path: dist
       - name: Create the release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           set -eu
-          jar=$(find build/libs -name 'bluemap-worldscan-*.jar' ! -name '*-plain.jar')
-          gh release create "$GITHUB_REF_NAME" "$jar" --generate-notes
+          jar=$(find dist -name 'bluemap-worldscan-*.jar')
+          gh release create "$GITHUB_REF_NAME" "$jar" --verify-tag --generate-notes
