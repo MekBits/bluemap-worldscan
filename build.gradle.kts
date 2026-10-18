@@ -58,6 +58,21 @@ tasks.test {
     useJUnitPlatform()
 }
 
+// One-time: copies only the tags the addon reads out of raw chunks of a private world into the
+// committed test fixtures. Usage: ./gradlew reduceFixtures -PfixturesDir=<dir of raw .nbt chunks>
+tasks.register<JavaExec>("reduceFixtures") {
+    description = "Reduces raw chunk files in -PfixturesDir to the allow-listed tags in src/test/resources/chunks."
+    group = "other"
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass = "dk.mekbits.bluemapworldscan.testsupport.FixtureReducer"
+    val target = layout.projectDirectory.dir("src/test/resources/chunks").asFile.path
+    doFirst {
+        val source = providers.gradleProperty("fixturesDir").orNull
+            ?: throw GradleException("pass the raw chunks directory with -PfixturesDir=<dir>")
+        args(source, target)
+    }
+}
+
 tasks.jar {
     archiveClassifier = "plain"
 }
