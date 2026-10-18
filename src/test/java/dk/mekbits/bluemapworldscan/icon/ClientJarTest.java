@@ -15,7 +15,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
 
 import com.sun.net.httpserver.HttpExchange;
@@ -34,6 +37,9 @@ class ClientJarTest {
 
     private static final byte[] JAR_9_9 = "client jar 9.9".getBytes(StandardCharsets.UTF_8);
     private static final byte[] JAR_10_0 = "client jar 10.0".getBytes(StandardCharsets.UTF_8);
+    /** How much a server that is not stopped sends; the socket buffers hold only a few MB of it. */
+    private static final long FLOOD_BYTES = 64L << 20;
+    private static final long SMALL_LIMIT = 1024;
 
     @TempDir
     Path folder;
@@ -44,6 +50,10 @@ class ClientJarTest {
     private volatile String jarLocation = "/client.jar";
     private volatile String redirectTo;
     private volatile boolean chunked;
+    private volatile int floodStatus;
+    private volatile boolean floodDeclaresItsLength;
+    private final AtomicLong floodWritten = new AtomicLong();
+    private final CountDownLatch floodEnded = new CountDownLatch(1);
     private volatile String latest = "9.9";
     private volatile byte[] served = JAR_9_9;
     private volatile String published = Sha1.hex(JAR_9_9);
@@ -58,7 +68,9 @@ class ClientJarTest {
         });
         server.createContext("/client.jar", exchange -> {
             jarDownloads.incrementAndGet();
-            if (redirectTo != null) {
+            if (floodStatus != 0) {
+                flood(exchange);
+            } else if (redirectTo != null) {
                 exchange.getResponseHeaders().add("Location", redirectTo);
                 reply(exchange, 302, new byte[0]);
             } else if (chunked) {
@@ -95,6 +107,28 @@ class ClientJarTest {
     private String version() {
         String url = jarLocation.startsWith("/") ? base() + jarLocation : jarLocation;
         return "{\"downloads\":{\"client\":{\"sha1\":\"" + published + "\",\"url\":\"" + url + "\"}}}";
+    }
+
+    /** Sends FLOOD_BYTES of body and counts what was written before the client stopped reading and closed the connection. */
+    private void flood(HttpExchange exchange) throws IOException {
+        exchange.sendResponseHeaders(floodStatus, floodDeclaresItsLength ? FLOOD_BYTES : 0);
+        byte[] chunk = new byte[8192];
+        try (OutputStream out = exchange.getResponseBody()) {
+            for (long sent = 0; sent < FLOOD_BYTES; sent += chunk.length) {
+                out.write(chunk);
+                floodWritten.addAndGet(chunk.length);
+            }
+        } catch (IOException clientClosedTheConnection) {
+            // That is the outcome these tests look for; the count says how far the client read.
+        } finally {
+            floodEnded.countDown();
+        }
+    }
+
+    private void assertTheClientStoppedReadingEarly() throws InterruptedException {
+        assertTrue(floodEnded.await(30, TimeUnit.SECONDS), "the server never saw the client stop");
+        assertTrue(floodWritten.get() < FLOOD_BYTES / 4,
+                "the client read " + floodWritten.get() + " of " + FLOOD_BYTES + " bytes");
     }
 
     private static void reply(HttpExchange exchange, int status, byte[] body) throws IOException {
@@ -256,7 +290,7 @@ class ClientJarTest {
     }
 
     @Test
-    void aJarThatDeclaresMoreThanTheLimitIsNotDownloaded() throws IOException {
+    void aJarOneByteOverTheLimitThatDeclaresItIsRejected() throws IOException {
         try (LogCapture log = new LogCapture()) {
             assertTrue(clientJar(JAR_9_9.length - 1).ensure().isEmpty());
             assertTrue(log.warnings().stream().anyMatch(message -> message.contains("larger than")), log.warnings().toString());
@@ -265,7 +299,7 @@ class ClientJarTest {
     }
 
     @Test
-    void aJarThatTurnsOutLargerThanTheLimitWithoutDeclaringItIsCutOffAndRejected() throws IOException {
+    void aJarOneByteOverTheLimitThatDoesNotDeclareItIsRejected() throws IOException {
         chunked = true;
 
         try (LogCapture log = new LogCapture()) {
@@ -273,6 +307,43 @@ class ClientJarTest {
             assertTrue(log.warnings().stream().anyMatch(message -> message.contains("larger than")), log.warnings().toString());
         }
         assertEquals(List.of(), filesInFolder());
+    }
+
+    @Test
+    void aJarFarOverTheLimitThatDeclaresItIsRejectedWhenTheLimitIsPassed() throws Exception {
+        floodStatus = 200;
+        floodDeclaresItsLength = true;
+
+        try (LogCapture log = new LogCapture()) {
+            assertTrue(clientJar(SMALL_LIMIT).ensure().isEmpty());
+            assertEquals(1, log.warnings().size(), log.warnings().toString());
+        }
+        assertTheClientStoppedReadingEarly();
+        assertEquals(List.of(), filesInFolder());
+    }
+
+    @Test
+    void aJarFarOverTheLimitThatDoesNotDeclareItIsRejectedWhenTheLimitIsPassed() throws Exception {
+        floodStatus = 200;
+
+        try (LogCapture log = new LogCapture()) {
+            assertTrue(clientJar(SMALL_LIMIT).ensure().isEmpty());
+            assertEquals(1, log.warnings().size(), log.warnings().toString());
+        }
+        assertTheClientStoppedReadingEarly();
+        assertEquals(List.of(), filesInFolder());
+    }
+
+    @Test
+    void theBodyOfAnErrorResponseIsNotReadToTheEnd() throws Exception {
+        floodStatus = 500;
+        floodDeclaresItsLength = true;
+
+        try (LogCapture log = new LogCapture()) {
+            assertTrue(clientJar().ensure().isEmpty());
+            assertTrue(log.warnings().stream().anyMatch(message -> message.contains("HTTP 500")), log.warnings().toString());
+        }
+        assertTheClientStoppedReadingEarly();
     }
 
     @Test

@@ -2,12 +2,15 @@ package dk.mekbits.bluemapworldscan.icon;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.UncheckedIOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpResponse.BodyHandler;
 import java.net.http.HttpResponse.BodyHandlers;
+import java.net.http.HttpResponse.BodySubscriber;
+import java.net.http.HttpResponse.BodySubscribers;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -113,13 +116,14 @@ public final class ClientJar {
         Files.createDirectories(folder);
         Path temporary = Files.createTempFile(folder, PREFIX + version + "-", ".tmp");
         try {
+            // The download fails once it passes the limit, with a length declared over it or not.
             HttpResponse<Path> response = get(
-                    http, URI.create(client.get("url").getAsString()), JAR_TIMEOUT, cappedFile(temporary), temporary);
+                    http, URI.create(client.get("url").getAsString()), JAR_TIMEOUT,
+                    BodyHandlers.limiting(BodyHandlers.ofFile(temporary), maxJarBytes + 1), temporary);
             if (response.statusCode() != 200) {
                 throw new IOException("HTTP " + response.statusCode() + " downloading the client jar");
             }
-            if (response.headers().firstValueAsLong("Content-Length").orElse(0) > maxJarBytes
-                    || Files.size(temporary) > maxJarBytes) {
+            if (Files.size(temporary) > maxJarBytes) {
                 throw new IOException("the client jar is larger than the " + maxJarBytes + " bytes allowed");
             }
             String actual = sha1Of(temporary);
@@ -155,7 +159,7 @@ public final class ClientJar {
 
     /**
      * Gets the URL and follows its redirects, each of which must be trusted too. The body is kept for
-     * a 200 and replaced by {@code noBody} for any other status.
+     * a 200; for any other status it is not read at all and the response holds {@code noBody}.
      */
     private <T> HttpResponse<T> get(HttpClient http, URI uri, Duration timeout, BodyHandler<T> body, T noBody)
             throws IOException, InterruptedException {
@@ -166,7 +170,7 @@ public final class ClientJar {
             }
             HttpResponse<T> response = http.send(
                     HttpRequest.newBuilder(current).timeout(timeout).GET().build(),
-                    info -> info.statusCode() == 200 ? body.apply(info) : BodyHandlers.replacing(noBody).apply(info));
+                    info -> info.statusCode() == 200 ? body.apply(info) : unread(noBody));
             String location = response.statusCode() / 100 == 3 ? response.headers().firstValue("Location").orElse(null) : null;
             if (location == null) {
                 return response;
@@ -178,12 +182,16 @@ public final class ClientJar {
         }
     }
 
-    /** Writes the body to the file, but not past one byte over the limit, and nothing when it declares more than the limit. */
-    private BodyHandler<Path> cappedFile(Path target) {
-        BodyHandler<Path> capped = BodyHandlers.limiting(BodyHandlers.ofFile(target), maxJarBytes + 1);
-        return info -> info.headers().firstValueAsLong("Content-Length").orElse(0) > maxJarBytes
-                ? BodyHandlers.replacing(target).apply(info)
-                : capped.apply(info);
+    /** Gives up on the body at once, which closes the connection, instead of reading it to the end. */
+    private static <T> BodySubscriber<T> unread(T instead) {
+        return BodySubscribers.mapping(BodySubscribers.ofInputStream(), body -> {
+            try {
+                body.close();
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+            return instead;
+        });
     }
 
     private Optional<Path> keptJar(String problem) {
