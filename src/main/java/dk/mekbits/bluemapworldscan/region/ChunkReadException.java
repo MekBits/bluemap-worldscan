@@ -7,7 +7,7 @@ import java.io.IOException;
  * an unsupported compression, or its external file is missing. The scanner counts the chunk as
  * failed and reads it again on the next scan.
  */
-public final class ChunkReadException extends IOException {
+public class ChunkReadException extends IOException {
 
     public ChunkReadException(String reason) {
         super(reason);

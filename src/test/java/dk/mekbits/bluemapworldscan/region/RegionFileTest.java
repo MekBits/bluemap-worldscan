@@ -15,6 +15,7 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.FileTime;
 import java.util.Map;
 
 import dk.mekbits.bluemapworldscan.testsupport.TestRegions;
@@ -160,8 +161,67 @@ class RegionFileTest {
 
         RegionFile region = RegionFile.open(file);
 
-        ChunkReadException e = assertThrows(ChunkReadException.class, () -> region.openChunk(5));
+        UnsupportedCompressionException e = assertThrows(UnsupportedCompressionException.class, () -> region.openChunk(5));
         assertEquals("unsupported compression 127", e.getMessage());
+        assertEquals(127, e.compression());
+    }
+
+    @Test
+    void unsupportedCompressionOfAnExternalChunkKeepsTheTypeWithoutTheExternalFlag() throws IOException {
+        Path file = dir.resolve("r.0.0.mca");
+        TestRegions.write(file, Map.of(5, new TestChunk(nbt, TIMESTAMP, 9, true)));
+
+        RegionFile region = RegionFile.open(file);
+
+        UnsupportedCompressionException e = assertThrows(UnsupportedCompressionException.class, () -> region.openChunk(5));
+        assertEquals(9, e.compression());
+    }
+
+    @Test
+    void externalFileChangedIsFalseWhileTheMccFileIsUntouched() throws IOException {
+        Path file = dir.resolve("r.0.0.mca");
+        TestRegions.write(file, Map.of(5, new TestChunk(nbt, TIMESTAMP, 2, true)));
+        RegionFile region = RegionFile.open(file);
+        read(region.openChunk(5));
+
+        assertFalse(region.externalFileChanged(5));
+    }
+
+    @Test
+    void externalFileChangedIsTrueWhenTheMccFileIsReplacedWithALaterModificationTime() throws IOException {
+        Path file = dir.resolve("r.0.0.mca");
+        TestRegions.write(file, Map.of(5, new TestChunk(nbt, TIMESTAMP, 2, true)));
+        Path external = dir.resolve("c.5.0.mcc");
+        RegionFile region = RegionFile.open(file);
+        read(region.openChunk(5));
+        FileTime opened = Files.getLastModifiedTime(external);
+
+        Files.write(external, new byte[] {1, 2, 3});
+        Files.setLastModifiedTime(external, FileTime.from(opened.toInstant().plusSeconds(10)));
+
+        assertTrue(region.externalFileChanged(5));
+    }
+
+    @Test
+    void externalFileChangedIsTrueWhenTheMccFileIsDeleted() throws IOException {
+        Path file = dir.resolve("r.0.0.mca");
+        TestRegions.write(file, Map.of(5, new TestChunk(nbt, TIMESTAMP, 2, true)));
+        RegionFile region = RegionFile.open(file);
+        read(region.openChunk(5));
+
+        Files.delete(dir.resolve("c.5.0.mcc"));
+
+        assertTrue(region.externalFileChanged(5));
+    }
+
+    @Test
+    void externalFileChangedIsFalseForAnInternalChunk() throws IOException {
+        Path file = dir.resolve("r.0.0.mca");
+        TestRegions.write(file, Map.of(5, new TestChunk(nbt, TIMESTAMP, 2, false)));
+        RegionFile region = RegionFile.open(file);
+        read(region.openChunk(5));
+
+        assertFalse(region.externalFileChanged(5));
     }
 
     @Test

@@ -155,7 +155,7 @@ public final class RegionFile {
             boolean external = (type & EXTERNAL_FLAG) != 0;
             int compression = type & ~EXTERNAL_FLAG;
             if (!isSupported(compression)) {
-                throw new ChunkReadException("unsupported compression " + compression);
+                throw new UnsupportedCompressionException(compression);
             }
 
             if (external) {
@@ -175,14 +175,37 @@ public final class RegionFile {
         }
     }
 
-    private InputStream openExternal(int index, int compression) throws IOException {
+    /**
+     * Whether the {@code .mcc} file the last {@link #openChunk} of this index opened has changed
+     * since: it is gone, or its {@code lastModifiedTime} or {@code fileKey} differ from the stamp
+     * taken when it was opened. False for an internal chunk, or one that was not opened.
+     */
+    public boolean externalFileChanged(int index) {
+        ExternalStamp stamp = externalStamps.get(index);
+        if (stamp == null) {
+            return false;
+        }
+        try {
+            BasicFileAttributes now = Files.readAttributes(externalPath(index), BasicFileAttributes.class);
+            return !stamp.lastModified().equals(now.lastModifiedTime()) || !Objects.equals(stamp.fileKey(), now.fileKey());
+        } catch (IOException e) {
+            return true;
+        }
+    }
+
+    /** The {@code c.<x>.<z>.mcc} file beside the region file that holds the chunk at this index. */
+    private Path externalPath(int index) throws ChunkReadException {
         int[] region = coords(file.getFileName().toString());
         if (region == null) {
             throw new ChunkReadException("external chunk " + index + " of a file that is not named r.<x>.<z>.mca");
         }
         int chunkX = region[0] * 32 + (index & 31);
         int chunkZ = region[1] * 32 + (index >> 5);
-        Path external = file.resolveSibling("c." + chunkX + "." + chunkZ + ".mcc");
+        return file.resolveSibling("c." + chunkX + "." + chunkZ + ".mcc");
+    }
+
+    private InputStream openExternal(int index, int compression) throws IOException {
+        Path external = externalPath(index);
 
         // The stamp is read before the content: a file replaced in between then shows up as
         // changed when the scanner compares stamps, whereas the other order would hide it.

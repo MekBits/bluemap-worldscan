@@ -477,6 +477,72 @@ class WorldScannerTest {
     }
 
     @Test
+    void aChunkWhoseSectorsMoveWhileItsTimestampStaysIsNotTakenAndIsReadNextScan() throws IOException {
+        TestRegions.write(regionFile("r.0.0.mca"), Map.of(
+                index(5, 0), zlib(chunk(5, 0, "minecraft:plains", "minecraft:igloo"), TS),
+                index(9, 0), zlib(chunk(9, 0, "minecraft:plains", "minecraft:igloo"), TS)));
+        ScanOutcome first = scan(world, emptyState());
+        TestRegions.write(regionFile("r.0.0.mca"), Map.of(
+                index(5, 0), zlib(chunk(5, 0, "minecraft:plains", "minecraft:swamp_hut"), TS + 1),
+                index(9, 0), zlib(chunk(9, 0, "minecraft:plains", "minecraft:igloo"), TS)));
+        // Same chunk, same timestamp, but an earlier chunk now sits before it, so its sectors move.
+        Map<Integer, TestChunk> moved = Map.of(
+                index(0, 0), zlib(chunk(0, 0, "minecraft:plains"), TS),
+                index(5, 0), zlib(chunk(5, 0, "minecraft:plains", "minecraft:swamp_hut"), TS + 1),
+                index(9, 0), zlib(chunk(9, 0, "minecraft:plains", "minecraft:igloo"), TS));
+        AtomicBoolean done = new AtomicBoolean();
+
+        ScanOutcome second = WorldScanner.scan(world, first.state(), FAST, new CancellationToken(), state -> {
+        }, (file, chunkIndex) -> {
+            if (chunkIndex == 5 && !done.getAndSet(true)) {
+                try {
+                    TestRegions.write(file, moved);
+                } catch (IOException e) {
+                    throw new AssertionError(e);
+                }
+            }
+        });
+        ScanOutcome third = scan(world, second.state());
+
+        assertEquals(1, second.report().changedDuringRead());
+        assertEquals(0, second.report().read());
+        RegionEntry kept = region(second, "r.0.0.mca");
+        assertEquals(TS, kept.timestamps()[5]);
+        assertEquals(List.of("minecraft:igloo"), structureIds(kept, 5));
+        assertEquals(2, third.report().read(), "chunk 5 and the chunk that appeared at index 0");
+        assertEquals(List.of("minecraft:swamp_hut"), structureIds(region(third, "r.0.0.mca"), 5));
+    }
+
+    @Test
+    void aRegionFileDeletedDuringTheReadLeavesEveryChunkReadInItUntaken() throws IOException {
+        TestRegions.write(regionFile("r.0.0.mca"), Map.of(
+                index(2, 0), zlib(chunk(2, 0, "minecraft:plains", "minecraft:igloo"), TS),
+                index(5, 0), zlib(chunk(5, 0, "minecraft:plains", "minecraft:igloo"), TS)));
+        ScanOutcome first = scan(world, emptyState());
+        TestRegions.write(regionFile("r.0.0.mca"), Map.of(
+                index(2, 0), zlib(chunk(2, 0, "minecraft:plains", "minecraft:swamp_hut"), TS + 1),
+                index(5, 0), zlib(chunk(5, 0, "minecraft:plains", "minecraft:swamp_hut"), TS + 1)));
+
+        ScanOutcome second = WorldScanner.scan(world, first.state(), FAST, new CancellationToken(), state -> {
+        }, (file, chunkIndex) -> {
+            if (chunkIndex == 5) {
+                try {
+                    Files.delete(file);
+                } catch (IOException e) {
+                    throw new AssertionError(e);
+                }
+            }
+        });
+
+        assertEquals(2, second.report().changedDuringRead());
+        assertEquals(0, second.report().read());
+        assertEquals(0, second.report().failed());
+        assertSame(first.state().regions().get("r.0.0.mca"), second.state().regions().get("r.0.0.mca"));
+        assertEquals(List.of("minecraft:igloo"), structureIds(region(second, "r.0.0.mca"), 2));
+        assertEquals(TS, region(second, "r.0.0.mca").timestamps()[5]);
+    }
+
+    @Test
     void aPre113ChunkIsCountedAndItsTimestampStoredSoItIsNotReadAgain() throws IOException {
         TestRegions.write(regionFile("r.0.0.mca"), Map.of(0, zlib(preThirteenChunk(0, 0), TS)));
 

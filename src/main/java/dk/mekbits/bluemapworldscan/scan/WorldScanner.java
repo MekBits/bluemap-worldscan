@@ -5,7 +5,6 @@ import java.io.InputStream;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.BitSet;
@@ -25,8 +24,8 @@ import dk.mekbits.bluemapworldscan.chunk.ChunkReader;
 import dk.mekbits.bluemapworldscan.chunk.FoundStructure;
 import dk.mekbits.bluemapworldscan.region.ChunkReadException;
 import dk.mekbits.bluemapworldscan.region.RegionFile;
-import dk.mekbits.bluemapworldscan.region.RegionFile.ExternalStamp;
 import dk.mekbits.bluemapworldscan.region.RegionFile.RegionHeader;
+import dk.mekbits.bluemapworldscan.region.UnsupportedCompressionException;
 import dk.mekbits.bluemapworldscan.state.RegionEntry;
 import dk.mekbits.bluemapworldscan.state.ScanState;
 import dk.mekbits.bluemapworldscan.state.StructureEntry;
@@ -53,8 +52,6 @@ public final class WorldScanner {
     private static final int NEVER_READ = -1;
     private static final int CHECKPOINT_EVERY_REGIONS = 100;
     private static final long SLEEP_SLICE_NANOS = TimeUnit.MILLISECONDS.toNanos(50);
-    /** The start of the message of {@link RegionFile#openChunk} for a compression type it cannot read. */
-    private static final String UNSUPPORTED_COMPRESSION = "unsupported compression";
 
     private WorldScanner() {
     }
@@ -245,7 +242,7 @@ public final class WorldScanner {
         Map<Integer, ChunkInfo> taken = new TreeMap<>();
         for (Map.Entry<Integer, ChunkInfo> chunk : read.entrySet()) {
             int index = chunk.getKey();
-            if (changedDuringRead(region, file, regionX, regionZ, index, first, second)) {
+            if (changedDuringRead(region, index, first, second)) {
                 tally.changedDuringRead++;
                 continue;
             }
@@ -272,12 +269,12 @@ public final class WorldScanner {
     private static @Nullable ChunkInfo readChunk(RegionFile region, Path file, int index, ScanReport.Builder tally) {
         try (InputStream in = region.openChunk(index)) {
             return ChunkReader.read(in);
+        } catch (UnsupportedCompressionException e) {
+            tally.unsupportedCompression++;
+            LOG.log(System.Logger.Level.DEBUG, "[bluemap-worldscan] " + file.getFileName() + " chunk " + index + ": " + e.getMessage());
+            return null;
         } catch (ChunkReadException e) {
-            if (e.getMessage() != null && e.getMessage().startsWith(UNSUPPORTED_COMPRESSION)) {
-                tally.unsupportedCompression++;
-            } else {
-                tally.failed++;
-            }
+            tally.failed++;
             LOG.log(System.Logger.Level.DEBUG, "[bluemap-worldscan] " + file.getFileName() + " chunk " + index + ": " + e.getMessage());
             return null;
         } catch (IOException e) {
@@ -288,30 +285,11 @@ public final class WorldScanner {
     }
 
     private static boolean changedDuringRead(
-            RegionFile region,
-            Path file,
-            int regionX,
-            int regionZ,
-            int index,
-            RegionHeader first,
-            @Nullable RegionHeader second) {
-        if (second == null
+            RegionFile region, int index, RegionHeader first, @Nullable RegionHeader second) {
+        return second == null
                 || first.offsets()[index] != second.offsets()[index]
-                || first.timestamps()[index] != second.timestamps()[index]) {
-            return true;
-        }
-        ExternalStamp stamp = region.externalStamp(index);
-        if (stamp == null) {
-            return false;
-        }
-        // RegionFile has no accessor for the path it opened; the name is the format's: c.<x>.<z>.mcc.
-        Path external = file.resolveSibling("c." + (regionX * 32 + (index & 31)) + "." + (regionZ * 32 + (index >> 5)) + ".mcc");
-        try {
-            BasicFileAttributes now = Files.readAttributes(external, BasicFileAttributes.class);
-            return !stamp.lastModified().equals(now.lastModifiedTime()) || !Objects.equals(stamp.fileKey(), now.fileKey());
-        } catch (IOException e) {
-            return true;
-        }
+                || first.timestamps()[index] != second.timestamps()[index]
+                || region.externalFileChanged(index);
     }
 
     /** The structures of the chunks not replaced, plus those of the taken chunks, ordered by chunk index. */
