@@ -4,13 +4,17 @@ import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.function.Predicate;
 
+import dk.mekbits.bluemapworldscan.layer.ServedSize;
 import dk.mekbits.bluemapworldscan.region.RegionFile;
 import dk.mekbits.bluemapworldscan.state.RegionEntry;
 import dk.mekbits.bluemapworldscan.state.ScanState;
+import dk.mekbits.bluemapworldscan.util.Log;
 import org.locationtech.jts.geom.Envelope;
 import org.locationtech.jts.geom.Geometry;
 import org.locationtech.jts.geom.GeometryFactory;
@@ -29,35 +33,65 @@ import org.locationtech.jts.simplify.TopologyPreservingSimplifier;
  */
 public final class BiomeShapes {
 
+    /** The most biomes one world gets layers for; vanilla has about 65 and a data pack adds few. */
+    public static final int MAX_BIOMES = 512;
+    /** The most the areas of one world may take in {@code live/markers.json}, by {@link ServedSize#CELL_UPPER_BOUND_BYTES} per cell. */
+    public static final long MAX_ESTIMATED_BYTES = 100_000_000L;
+    /** The most (biome, cell) pairs that stay under {@link #MAX_ESTIMATED_BYTES}. */
+    public static final long MAX_CELLS = MAX_ESTIMATED_BYTES / ServedSize.CELL_UPPER_BOUND_BYTES;
+
     private static final int REGION_CHUNKS = 32;
     private static final int BLOCKS_PER_CHUNK = 16;
 
     private BiomeShapes() {
     }
 
+    /** The polygons of every biome in the state; see {@link #build(ScanState, int, Predicate)}. */
+    public static Map<String, List<Polygon>> build(ScanState state, int cellSizeChunks) {
+        return build(state, cellSizeChunks, biome -> true);
+    }
+
     /**
-     * The polygons of each biome in the state, keyed by biome id in sorted order. A biome with no
-     * chunk in the state has no entry.
+     * The polygons of each wanted biome in the state, keyed by biome id in sorted order. A biome
+     * with no chunk in the state has no entry.
+     *
+     * <p>A world with more than {@link #MAX_BIOMES} wanted biomes gets the first ones by id and a
+     * warning. A world whose cells could take more than {@link #MAX_ESTIMATED_BYTES} of markers
+     * (counted before anything is unioned, at the most one area and four corners per cell) gets no
+     * polygons and a warning that names {@code biomes.cellSizeChunks}.
      *
      * @param state the scan state, its regions named {@code r.<x>.<z>.mca}
      * @param cellSizeChunks the side of a cell in chunks, at least 1
+     * @param wanted which biome ids to build
      * @throws IllegalArgumentException when {@code cellSizeChunks} is below 1 or a region name is
      *     not a region file name
      */
-    public static Map<String, List<Polygon>> build(ScanState state, int cellSizeChunks) {
+    public static Map<String, List<Polygon>> build(ScanState state, int cellSizeChunks, Predicate<String> wanted) {
         if (cellSizeChunks < 1) {
             throw new IllegalArgumentException("cellSizeChunks must be at least 1: " + cellSizeChunks);
         }
+        Set<String> biomes = firstBiomes(state, wanted);
         Map<String, TreeSet<Cell>> cellsByBiome = new TreeMap<>();
+        long pairs = 0;
         for (Map.Entry<String, RegionEntry> region : state.regions().entrySet()) {
             int[] origin = regionOrigin(region.getKey());
             for (Map.Entry<String, long[]> biome : region.getValue().biomes().entrySet()) {
+                if (!biomes.contains(biome.getKey())) {
+                    continue;
+                }
                 TreeSet<Cell> cells = cellsByBiome.computeIfAbsent(biome.getKey(), key -> new TreeSet<>());
                 BitSet bits = BitSet.valueOf(biome.getValue());
                 for (int index = bits.nextSetBit(0); index >= 0; index = bits.nextSetBit(index + 1)) {
-                    int chunkX = origin[0] * REGION_CHUNKS + index % REGION_CHUNKS;
-                    int chunkZ = origin[1] * REGION_CHUNKS + index / REGION_CHUNKS;
-                    cells.add(new Cell(Math.floorDiv(chunkX, cellSizeChunks), Math.floorDiv(chunkZ, cellSizeChunks)));
+                    // Long: a region file name may hold any int, and times 32 that does not fit one.
+                    long chunkX = (long) origin[0] * REGION_CHUNKS + index % REGION_CHUNKS;
+                    long chunkZ = (long) origin[1] * REGION_CHUNKS + index / REGION_CHUNKS;
+                    if (cells.add(new Cell(Math.floorDiv(chunkX, (long) cellSizeChunks), Math.floorDiv(chunkZ, (long) cellSizeChunks)))
+                            && ++pairs > MAX_CELLS) {
+                        Log.warn("the biome layers of world " + state.worldId() + " are skipped: at biomes.cellSizeChunks "
+                                + cellSizeChunks + " they would take more than " + MAX_ESTIMATED_BYTES / 1_000_000
+                                + " MB of markers. Raise biomes.cellSizeChunks to make the cells larger");
+                        return Map.of();
+                    }
                 }
             }
         }
@@ -70,6 +104,31 @@ public final class BiomeShapes {
             }
         });
         return shapes;
+    }
+
+    /** The first {@link #MAX_BIOMES} wanted biome ids of the state in id order; a longer list is logged. */
+    private static Set<String> firstBiomes(ScanState state, Predicate<String> wanted) {
+        TreeSet<String> all = new TreeSet<>();
+        for (RegionEntry region : state.regions().values()) {
+            for (String biome : region.biomes().keySet()) {
+                if (wanted.test(biome)) {
+                    all.add(biome);
+                }
+            }
+        }
+        if (all.size() <= MAX_BIOMES) {
+            return all;
+        }
+        Set<String> first = new TreeSet<>();
+        for (String biome : all) {
+            if (first.size() == MAX_BIOMES) {
+                break;
+            }
+            first.add(biome);
+        }
+        Log.warn("world " + state.worldId() + " has " + all.size() + " biomes; only the first " + MAX_BIOMES
+                + " by id get a layer, " + (all.size() - MAX_BIOMES) + " are left out");
+        return first;
     }
 
     /** The region's origin in region coordinates, {x, z}. */
@@ -120,11 +179,11 @@ public final class BiomeShapes {
     }
 
     /** A square of cells by cell coordinates, ordered by row (z) and then column (x). */
-    private record Cell(int x, int z) implements Comparable<Cell> {
+    private record Cell(long x, long z) implements Comparable<Cell> {
 
         @Override
         public int compareTo(Cell other) {
-            return z != other.z ? Integer.compare(z, other.z) : Integer.compare(x, other.x);
+            return z != other.z ? Long.compare(z, other.z) : Long.compare(x, other.x);
         }
     }
 }

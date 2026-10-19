@@ -96,4 +96,24 @@ class AddonConfigTest {
 
         assertFalse(AddonConfig.loadOrCreate(folder).scan());
     }
+
+    @Test
+    void aCellSizeAsWideAsTheWorldBorderIsAccepted() throws IOException {
+        write("{\"biomes\": {\"cellSizeChunks\": 1875000}}");
+
+        AddonConfig config = AddonConfig.loadOrCreate(folder);
+
+        assertTrue(config.scan());
+        assertEquals(1_875_000, config.biomes().cellSizeChunks());
+    }
+
+    @Test
+    void aCellSizeWiderThanTheWorldBorderGivesTheDefaultsWithScanOff() throws IOException {
+        write("{\"biomes\": {\"cellSizeChunks\": 1875001}}");
+
+        AddonConfig config = AddonConfig.loadOrCreate(folder);
+
+        assertFalse(config.scan());
+        assertEquals(AddonConfig.defaults().biomes(), config.biomes());
+    }
 }

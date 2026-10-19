@@ -92,7 +92,7 @@ public final class LayerBuilder {
         Set<String> disabled = config.biomes().disabled().stream()
                 .map(id -> id.indexOf(':') < 0 ? "minecraft:" + id : id)
                 .collect(Collectors.toUnmodifiableSet());
-        Map<String, List<Polygon>> shapes = BiomeShapes.build(state, config.biomes().cellSizeChunks());
+        Map<String, List<Polygon>> shapes = BiomeShapes.build(state, config.biomes().cellSizeChunks(), biome -> !disabled.contains(biome));
 
         List<LayerSet> sets = new ArrayList<>();
         Set<String> usedIds = new HashSet<>();
@@ -167,9 +167,14 @@ public final class LayerBuilder {
         Coordinate[] coordinates = ring.getCoordinates();
         List<int[]> corners = new ArrayList<>(coordinates.length - 1);
         for (int i = 0; i < coordinates.length - 1; i++) {
-            corners.add(new int[] {(int) Math.round(coordinates[i].x), (int) Math.round(coordinates[i].y)});
+            corners.add(new int[] {block(coordinates[i].x), block(coordinates[i].y)});
         }
         return corners;
+    }
+
+    /** A block coordinate that stays on its side of the world when it is far out of the int range. */
+    private static int block(double coordinate) {
+        return (int) Math.max(Integer.MIN_VALUE, Math.min(Integer.MAX_VALUE, Math.round(coordinate)));
     }
 
     /**

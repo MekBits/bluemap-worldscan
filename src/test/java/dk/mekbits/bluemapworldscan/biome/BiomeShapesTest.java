@@ -106,4 +106,23 @@ class BiomeShapesTest {
         assertEquals(33 * 16, envelope.getMaxX(), 1e-9);
         assertEquals(2 * 16 * 16, polygons.get(0).getArea(), 1e-9);
     }
+
+    @Test
+    void aRegionFarFromTheOriginKeepsItsPlaceInsteadOfWrappingAround() {
+        // Region x 70,000,000 is chunk x 2,240,000,000, which an int cannot hold.
+        List<Polygon> polygons = plains(state("r.70000000.-70000000.mca", 0), 1);
+
+        Envelope envelope = polygons.get(0).getEnvelopeInternal();
+        assertEquals(70_000_000d * 512, envelope.getMinX(), 1e-3);
+        assertEquals(70_000_000d * 512 + 16, envelope.getMaxX(), 1e-3);
+        assertEquals(-70_000_000d * 512, envelope.getMinY(), 1e-3);
+    }
+
+    @Test
+    void cellsOfARegionFarFromTheOriginStillMergeWithTheirNeighbours() {
+        List<Polygon> polygons = plains(state("r.70000000.0.mca", 0, 1), 1);
+
+        assertEquals(1, polygons.size());
+        assertEquals(2 * 16 * 16, polygons.get(0).getArea(), 1e-3);
+    }
 }

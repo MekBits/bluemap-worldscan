@@ -6,6 +6,7 @@ import static dk.mekbits.bluemapworldscan.testsupport.TestStates.structure;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -17,6 +18,7 @@ import java.util.TreeMap;
 
 import dk.mekbits.bluemapworldscan.biome.BiomeColors;
 import dk.mekbits.bluemapworldscan.biome.BiomeNames;
+import dk.mekbits.bluemapworldscan.biome.BiomeShapes;
 import dk.mekbits.bluemapworldscan.config.AddonConfig;
 import dk.mekbits.bluemapworldscan.icon.IconAssets;
 import dk.mekbits.bluemapworldscan.layer.LayersFile;
@@ -25,6 +27,7 @@ import dk.mekbits.bluemapworldscan.layer.LayersFile.LayerSet;
 import dk.mekbits.bluemapworldscan.layer.LayersFile.Poi;
 import dk.mekbits.bluemapworldscan.state.ScanState;
 import dk.mekbits.bluemapworldscan.testsupport.InMemoryAssetStorage;
+import dk.mekbits.bluemapworldscan.testsupport.LogCapture;
 import dk.mekbits.bluemapworldscan.testsupport.TestStates;
 import org.junit.jupiter.api.Test;
 
@@ -372,5 +375,91 @@ class LayerBuilderTest {
 
         assertEquals(2, sets.size());
         assertEquals(2, sets.stream().map(LayerSet::id).distinct().count());
+    }
+
+    @Test
+    void anAreaFarOutIsClampedToTheIntRangeInsteadOfWrappingToTheOtherSide() {
+        ScanState near = TestStates.biomes(Map.of("minecraft:plains", new int[] {0}));
+        TreeMap<String, dk.mekbits.bluemapworldscan.state.RegionEntry> regions = new TreeMap<>();
+        regions.put("r.70000000.70000000.mca", near.regions().get("r.0.0.mca"));
+        ScanState far = new ScanState(ScanState.FORMAT_VERSION, "world-1", regions);
+
+        List<LayerSet> sets = LayerBuilder.buildBiomes(far, DEFAULTS, NAMES);
+
+        for (int[] corner : sets.getFirst().areas().getFirst().outline()) {
+            assertEquals(Integer.MAX_VALUE, corner[0]);
+            assertEquals(Integer.MAX_VALUE, corner[1]);
+        }
+    }
+
+    private static ScanState biomesNamed(int count) {
+        Map<String, int[]> biomes = new TreeMap<>();
+        for (int n = 0; n < count; n++) {
+            biomes.put(String.format("pack:b%03d", n), new int[] {0});
+        }
+        return TestStates.biomes(biomes);
+    }
+
+    @Test
+    void aWorldWithMoreThanFiveHundredAndTwelveBiomesGetsTheFirstOnesByIdAndAWarning() {
+        try (LogCapture log = new LogCapture()) {
+            List<LayerSet> sets = LayerBuilder.buildBiomes(biomesNamed(600), DEFAULTS, NAMES);
+
+            assertEquals(512, sets.size());
+            assertNull(biomeSet(sets, "pack-b512"));
+            assertEquals("worldscan-biome-pack-b511", sets.stream().map(LayerSet::id).max(String::compareTo).orElseThrow());
+            assertNotNull(biomeSet(sets, "pack-b000"));
+            assertTrue(log.warnings().stream().anyMatch(message -> message.contains("600") && message.contains("512") && message.contains("88")),
+                    log.warnings().toString());
+        }
+    }
+
+    @Test
+    void aWorldWithFiveHundredAndTwelveBiomesGetsAllOfThemWithoutAWarning() {
+        try (LogCapture log = new LogCapture()) {
+            assertEquals(512, LayerBuilder.buildBiomes(biomesNamed(512), DEFAULTS, NAMES).size());
+
+            assertTrue(log.warnings().isEmpty(), log.warnings().toString());
+        }
+    }
+
+    @Test
+    void disabledBiomesDoNotCountTowardsTheLimit() {
+        try (LogCapture log = new LogCapture()) {
+            List<LayerSet> sets = LayerBuilder.buildBiomes(biomesNamed(513), withBiomes(true, 16, "pack:b512"), NAMES);
+
+            assertEquals(512, sets.size());
+            assertNotNull(biomeSet(sets, "pack-b511"));
+            assertTrue(log.warnings().isEmpty(), log.warnings().toString());
+        }
+    }
+
+    @Test
+    void aWorldWhoseCellsCouldTakeHundredMillionBytesStillGetsItsBiomeLayers() {
+        ScanState state = TestStates.biomeChunks("minecraft:plains", BiomeShapes.MAX_CELLS);
+
+        List<LayerSet> sets = LayerBuilder.buildBiomes(state, withBiomes(true, 1), NAMES);
+
+        assertEquals(1, sets.size());
+    }
+
+    @Test
+    void aWorldWithOneCellMoreThanTheLimitGetsNoBiomeLayersAndAWarningNamingTheCellSize() {
+        ScanState state = TestStates.biomeChunks("minecraft:plains", BiomeShapes.MAX_CELLS + 1);
+
+        try (LogCapture log = new LogCapture()) {
+            List<LayerSet> sets = LayerBuilder.buildBiomes(state, withBiomes(true, 1), NAMES);
+
+            assertTrue(sets.isEmpty());
+            assertTrue(log.warnings().stream().anyMatch(message -> message.contains("biomes.cellSizeChunks") && message.contains("world-1")),
+                    log.warnings().toString());
+        }
+    }
+
+    @Test
+    void aLargerCellBringsTheSameWorldUnderTheLimit() {
+        ScanState state = TestStates.biomeChunks("minecraft:plains", BiomeShapes.MAX_CELLS + 1);
+
+        assertEquals(1, LayerBuilder.buildBiomes(state, withBiomes(true, 16), NAMES).size());
     }
 }
