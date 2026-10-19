@@ -121,7 +121,7 @@ A few consequences:
   },
   "biomes": {
     "enabled": true,
-    "cellSizeChunks": 4,
+    "cellSizeChunks": 16,
     "disabled": []
   }
 }
@@ -134,7 +134,7 @@ A few consequences:
 | `refreshMinutes` | `5` | How often an instance with `scan` off looks for a new generation of layers. `0` turns it off. An instance that scans does not use it. |
 | `structures.disabledLayers` | `["mineshaft", "buried_treasure"]` | Layer ids that are not built. Scanning instance only. See the table below. |
 | `biomes.enabled` | `true` | Whether biome layers are built. `false` builds none. Scanning instance only. |
-| `biomes.cellSizeChunks` | `4` | The resolution of the biome areas: the side of a cell in chunks. At least 1. A larger cell gives a coarser, smaller layer. Scanning instance only. See [Biomes](#biomes). |
+| `biomes.cellSizeChunks` | `16` | The resolution of the biome areas: the side of a cell in chunks. At least 1. A larger cell gives a coarser, smaller layer. Scanning instance only. See [Biomes](#biomes). |
 | `biomes.disabled` | `[]` | Biomes that are not built, as ids with or without the namespace: `["plains", "minecraft:river", "some_pack:crystal_caves"]`. Scanning instance only. |
 
 A config that cannot be read, or that holds an impossible value (such as `maxChunksPerSecond` below
@@ -197,7 +197,7 @@ name (a datapack's, or one newer than the client jar) is named from its id, as "
 
 - A layer shows the areas where the biome occurs **at any height**, so cave biomes such as Lush
   Caves and Deep Dark show as well. It is not a map of the surface biome.
-- The world is cut into square cells of `biomes.cellSizeChunks` chunks (the default 4 is 64
+- The world is cut into square cells of `biomes.cellSizeChunks` chunks (the default 16 is 256
   blocks). A cell belongs to a biome when any chunk in it has the biome, so an area reaches up to a
   cell beyond the real edge of the biome. Cells that touch are joined into one area, with holes
   where there are any.
@@ -211,7 +211,7 @@ name (a datapack's, or one newer than the client jar) is named from its id, as "
 - The Nether and End maps show the biomes of their own dimensions.
 - Biomes saved by older Minecraft versions show under their current names.
 
-The biome layers are the biggest part of `live/markers.json`, see the next section.
+The biome layers add to `live/markers.json`, which every browser loads: see the next section.
 
 ### Markers
 
@@ -263,15 +263,16 @@ smaller. If your world is large and the web app is slow to load, look at this nu
 A biome area takes about 330 bytes and 23 bytes for each corner of its outline. Every biome layer
 is in the file whether it is shown or not.
 
-The same overworld with the default structure layers (5,799,677 bytes) and biome layers of
-different cell sizes. The world has 55 biomes in its overworld:
+With the default settings that world gives a `live/markers.json` of 9,347,917 bytes: the default
+structure layers (5,799,677 bytes) and the biome layers at 16 chunks per cell (3,548,241 bytes). The
+same overworld, which has 55 biomes, at other cell sizes:
 
 | `biomes.cellSizeChunks` | Biome areas | Corners | Biomes in `live/markers.json` | Whole file |
 |---|---|---|---|---|
-| 4 (default) | 16,469 | 321,852 | 12,827,634 bytes | 18,627,310 bytes |
+| 4 | 16,469 | 321,852 | 12,827,634 bytes | 18,627,310 bytes |
 | 8 | 10,241 | 150,996 | 6,937,932 bytes | 12,737,608 bytes |
 | 12 | 7,383 | 96,108 | 4,734,129 bytes | 10,533,805 bytes |
-| 16 | 5,772 | 67,744 | 3,548,241 bytes | 9,347,917 bytes |
+| 16 (default) | 5,772 | 67,744 | 3,548,241 bytes | 9,347,917 bytes |
 | 32 | 2,968 | 30,798 | 1,746,280 bytes | 7,545,956 bytes |
 
 With the biome layers off (`biomes.enabled` `false`) the file is the 5,799,677 bytes of the

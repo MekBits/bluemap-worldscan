@@ -68,7 +68,7 @@ public record AddonConfig(
 
     /** The settings of a folder without a config file. */
     public static AddonConfig defaults() {
-        return new AddonConfig(true, 500, 5, new Structures(List.of("mineshaft", "buried_treasure")), new Biomes(true, 4, List.of()));
+        return new AddonConfig(true, 500, 5, new Structures(List.of("mineshaft", "buried_treasure")), new Biomes(true, 16, List.of()));
     }
 
     /**

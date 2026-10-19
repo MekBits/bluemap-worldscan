@@ -225,7 +225,7 @@ class LayerBuilderTest {
     void aBiomeBecomesAHiddenSetWithAnAreaOfItsCells() {
         ScanState state = TestStates.biomes(Map.of("minecraft:plains", new int[] {0, 1, 32, 33}));
 
-        List<LayerSet> sets = LayerBuilder.buildBiomes(state, DEFAULTS, NAMES);
+        List<LayerSet> sets = LayerBuilder.buildBiomes(state, withBiomes(true, 4), NAMES);
 
         assertEquals(1, sets.size());
         LayerSet plains = biomeSet(sets, "minecraft-plains");
@@ -272,7 +272,7 @@ class LayerBuilderTest {
         // Chunk 40 (x 8, z 1) is far from chunk 0, cells of 4x4 chunks.
         ScanState state = TestStates.biomes(Map.of("minecraft:plains", new int[] {40, 0}));
 
-        List<Area> areas = LayerBuilder.buildBiomes(state, DEFAULTS, NAMES).getFirst().areas();
+        List<Area> areas = LayerBuilder.buildBiomes(state, withBiomes(true, 4), NAMES).getFirst().areas();
 
         assertEquals(List.of("0", "1"), areas.stream().map(Area::id).toList());
         assertEquals(0, corners(areas.get(0))[0][0] + corners(areas.get(0))[0][1]);

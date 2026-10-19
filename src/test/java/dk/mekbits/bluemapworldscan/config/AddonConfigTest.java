@@ -32,7 +32,7 @@ class AddonConfigTest {
         assertEquals(5, config.refreshMinutes());
         assertEquals(List.of("mineshaft", "buried_treasure"), config.structures().disabledLayers());
         assertTrue(config.biomes().enabled());
-        assertEquals(4, config.biomes().cellSizeChunks());
+        assertEquals(16, config.biomes().cellSizeChunks());
         assertEquals(List.of(), config.biomes().disabled());
         assertEquals(config, AddonConfig.loadOrCreate(folder), "the written file reads back as the same settings");
         assertTrue(Files.readString(folder.resolve("config.json")).contains("\"disabledLayers\""));
