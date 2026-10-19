@@ -134,7 +134,7 @@ class ScanPassTest {
     void theWarningStartsAboveTenMillionBytes() {
         assertFalse(ScanPass.oversized(10_000_000L), "10,000,000 bytes is the limit itself");
         assertTrue(ScanPass.oversized(10_000_001L));
-        assertFalse(ScanPass.oversized(9_162_685L), "Wildwood's overworld with the defaults fits");
+        assertFalse(ScanPass.oversized(9_162_685L), "the measured overworld with the defaults fits");
     }
 
     private static long served(InMemoryBlueMapMap map, String setIdPrefix) {

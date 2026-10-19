@@ -201,7 +201,7 @@ class BiomeShapesTest {
     }
 
     @Test
-    void theCellLimitLeavesRoomForWildwoodsOverworldAtFourChunksPerCell() {
+    void theCellLimitLeavesRoomForTheMeasuredOverworldAtFourChunksPerCell() {
         assertTrue(BiomeShapes.MAX_CELLS >= 2 * 617_761L, "617,761 pairs measured at 4 chunks per cell");
     }
 }

@@ -42,7 +42,7 @@ public final class BiomeShapes {
     public static final long MAX_ESTIMATED_BYTES = 100_000_000L;
     /**
      * The most (biome, cell) pairs held before the union. A pair in a {@code TreeSet} takes 72
-     * bytes (measured), so this allows about 144 MB of heap. Wildwood's overworld has 617,761
+     * bytes (measured), so this allows about 144 MB of heap. The measured overworld has 617,761
      * pairs at 4 chunks per cell, 222,876 at 8, 1,890,859 at 2 and 6,301,195 at 1.
      */
     public static final long MAX_CELLS = 2_000_000L;

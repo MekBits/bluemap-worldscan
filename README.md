@@ -338,9 +338,10 @@ standard error on every platform. Look for:
 - `stored generation G of the layers of map <id> (N markers)` when new layers were stored, or
   `the layers of map <id> are unchanged` when this instance stored these very layers before.
 - `built N biome layers of world <id> in S s` when the biome areas of a world were worked out.
-  A warning instead says that the biome layers of a world were skipped (too many cells, or too
-  large), that a world has more than 512 biomes, or that they could not be built; the structure layers are stored
-  in every case.
+  A warning before that line says when the biome layers of a world were skipped (too many cells,
+  or too large; the line then says 0) or when a world has more than 512 biomes. When the biome
+  layers could not be built at all, a warning replaces the line. The structure layers are stored in
+  every case.
 - `showing generation G of map <id> (N layers)` when an instance puts a stored generation on its
   map.
 
