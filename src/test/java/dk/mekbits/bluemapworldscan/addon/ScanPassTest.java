@@ -1,17 +1,99 @@
 package dk.mekbits.bluemapworldscan.addon;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
 
+import dk.mekbits.bluemapworldscan.bluemap.LayerPublisher;
+import dk.mekbits.bluemapworldscan.bluemap.MapLayers;
+import dk.mekbits.bluemapworldscan.config.AddonConfig;
+import dk.mekbits.bluemapworldscan.icon.ClientAssetIcons;
+import dk.mekbits.bluemapworldscan.scan.CancellationToken;
 import dk.mekbits.bluemapworldscan.layer.LayersFile;
 import dk.mekbits.bluemapworldscan.layer.LayersFile.Area;
 import dk.mekbits.bluemapworldscan.layer.LayersFile.LayerSet;
 import dk.mekbits.bluemapworldscan.layer.LayersFile.Poi;
+import dk.mekbits.bluemapworldscan.testsupport.FakeBlueMap.FakeWorld;
+import dk.mekbits.bluemapworldscan.testsupport.InMemoryBlueMapMap;
+import dk.mekbits.bluemapworldscan.testsupport.LogCapture;
+import dk.mekbits.bluemapworldscan.testsupport.TestWorlds;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class ScanPassTest {
+
+    private static final String VILLAGE_SET = "worldscan-structure-village";
+
+    @TempDir
+    Path temp;
+
+    private final LayerPublisher publisher = new LayerPublisher();
+
+    private CapturedWorld world(String id, Path dimension, InMemoryBlueMapMap... maps) {
+        FakeWorld world = new FakeWorld(id, dimension, List.of(maps));
+        return new CapturedWorld(id, world,
+                List.of(maps).stream().map(map -> new MapLayers(map, map.getAssetStorage(), publisher)).toList());
+    }
+
+    private ScanPass pass(CancellationToken cancel, ScanPass.BiomeBuilder biomes) throws IOException {
+        return new ScanPass(Files.createDirectories(temp.resolve("addon")), AddonConfig.defaults(), "scanner", "test",
+                new ClientAssetIcons(Optional::empty), cancel, biomes);
+    }
+
+    private static List<LayerSet> oneBiomeSet() {
+        Area area = new Area("0", "Plains", 63f, List.of(new int[] {0, 0}, new int[] {0, 16}, new int[] {16, 0}), List.of(), 0x73336699);
+        return List.of(new LayerSet("worldscan-biome-minecraft-plains", "Biome: Plains", true, 0, List.of(), List.of(area)));
+    }
+
+    @Test
+    void aBiomeBuildThatThrowsStillStoresTheStructureLayersOfEveryMapAndTheNextWorldIsScanned() throws IOException {
+        InMemoryBlueMapMap first = new InMemoryBlueMapMap("overworld");
+        InMemoryBlueMapMap second = new InMemoryBlueMapMap("overworld-b");
+        InMemoryBlueMapMap later = new InMemoryBlueMapMap("nether");
+        CapturedWorld broken = world("world", TestWorlds.withChunks(temp.resolve("world"), 40), first, second);
+        CapturedWorld next = world("world_nether", TestWorlds.withChunks(temp.resolve("nether"), 40), later);
+        ScanPass pass = pass(new CancellationToken(), (state, config, names) -> {
+            throw new IllegalStateException("boom");
+        });
+
+        try (LogCapture log = new LogCapture()) {
+            assertTrue(pass.run(broken));
+            assertTrue(pass.run(next), "the scan goes on with the next world");
+
+            assertTrue(log.warnings().stream().anyMatch(message -> message.contains("world") && message.contains("biome")),
+                    log.warnings().toString());
+        }
+        for (InMemoryBlueMapMap map : List.of(first, second, later)) {
+            assertTrue(map.getMarkerSets().containsKey(VILLAGE_SET), map.getId() + " has the structure layers");
+            assertEquals(1, map.getMarkerSets().size(), map.getId() + " has no biome layers");
+        }
+    }
+
+    @Test
+    void aScanCancelledWhileTheBiomesAreBuiltPublishesNothing() throws IOException {
+        InMemoryBlueMapMap first = new InMemoryBlueMapMap("overworld");
+        InMemoryBlueMapMap second = new InMemoryBlueMapMap("overworld-b");
+        CapturedWorld world = world("world", TestWorlds.withChunks(temp.resolve("world"), 40), first, second);
+        CancellationToken cancel = new CancellationToken();
+        ScanPass pass = pass(cancel, (state, config, names) -> {
+            cancel.cancel();
+            return oneBiomeSet();
+        });
+
+        boolean goOn = pass.run(world);
+
+        assertFalse(goOn, "the caller stops with the remaining worlds");
+        for (InMemoryBlueMapMap map : List.of(first, second)) {
+            assertTrue(map.getMarkerSets().isEmpty(), map.getId() + " shows nothing");
+            assertTrue(map.storage().names().isEmpty(), map.getId() + " stores nothing");
+        }
+    }
 
     @Test
     void theSizeWarningNamesTheSettingsThatShrinkTheLayers() {

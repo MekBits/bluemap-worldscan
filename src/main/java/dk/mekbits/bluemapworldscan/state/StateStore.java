@@ -16,6 +16,7 @@ import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.TreeSet;
 
+import dk.mekbits.bluemapworldscan.chunk.ResourceNames;
 import dk.mekbits.bluemapworldscan.util.Loaded;
 import net.kyori.adventure.nbt.BinaryTag;
 import net.kyori.adventure.nbt.BinaryTagIO;
@@ -34,7 +35,8 @@ import net.kyori.adventure.nbt.StringBinaryTag;
  * {@code regions}, a compound of region file name to a compound of {@code timestamps} int[1024],
  * {@code structures} (a list of compounds with {@code chunk} int, {@code id} string, {@code box}
  * int[6] and, only for an end city with a ship, {@code ship} int[6]) and {@code biomes}, a compound
- * of biome id to long[16]. The state is mapped by hand: the records carry no annotations.
+ * of biome id to long[16]; a biome key that is not a valid resource location is left out on loading.
+ * The state is mapped by hand: the records carry no annotations.
  */
 public final class StateStore {
 
@@ -176,6 +178,10 @@ public final class StateStore {
         CompoundBinaryTag biomeTags = compound(region, "biomes");
         SortedMap<String, long[]> biomes = new TreeMap<>();
         for (String biome : new TreeSet<>(biomeTags.keySet())) {
+            // The id ends up in set ids, labels and the log; a state file is not trusted to hold only real ones.
+            if (!ResourceNames.isValid(biome)) {
+                continue;
+            }
             if (!(biomeTags.get(biome) instanceof LongArrayBinaryTag bits) || bits.size() != BIOME_WORDS) {
                 throw new InvalidStateException("biome " + biome + " of " + name + " is not a long[" + BIOME_WORDS + "]");
             }

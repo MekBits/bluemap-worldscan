@@ -128,7 +128,9 @@ public final class LayerBuilder {
     /** {@code worldscan-biome-<namespace>-<path>}, with characters a set id should not hold replaced and clashes numbered. */
     private static String uniqueSetId(String biomeId, Set<String> usedIds) {
         int colon = biomeId.indexOf(':');
-        String base = BIOME_SET_PREFIX + (biomeId.substring(0, colon) + "-" + biomeId.substring(colon + 1))
+        // An id without a namespace is minecraft's, as in biomes.disabled.
+        String namespace = colon < 0 ? "minecraft" : biomeId.substring(0, colon);
+        String base = BIOME_SET_PREFIX + (namespace + "-" + biomeId.substring(colon + 1))
                 .toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9_.-]", "_");
         String id = base;
         for (int n = 2; !usedIds.add(id); n++) {

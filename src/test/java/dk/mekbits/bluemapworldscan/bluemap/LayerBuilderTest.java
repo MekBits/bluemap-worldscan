@@ -353,4 +353,24 @@ class LayerBuilderTest {
     void anEmptyStateGivesNoLayers() {
         assertEquals(List.of(), LayerBuilder.buildStructures(TestStates.state(), DEFAULTS, Map.of()));
     }
+
+    @Test
+    void aBiomeIdWithoutANamespaceGetsASetAsIfItWereMinecrafts() {
+        ScanState state = TestStates.biomes(Map.of("plains", new int[] {0}));
+
+        List<LayerSet> sets = LayerBuilder.buildBiomes(state, DEFAULTS, NAMES);
+
+        assertEquals(1, sets.size());
+        assertEquals(LayerBuilder.BIOME_SET_PREFIX + "minecraft-plains", sets.getFirst().id());
+    }
+
+    @Test
+    void aBiomeIdWithoutANamespaceNeverClashesWithTheSameNameInMinecraft() {
+        ScanState state = TestStates.biomes(Map.of("plains", new int[] {0}, "minecraft:plains", new int[] {5}));
+
+        List<LayerSet> sets = LayerBuilder.buildBiomes(state, DEFAULTS, NAMES);
+
+        assertEquals(2, sets.size());
+        assertEquals(2, sets.stream().map(LayerSet::id).distinct().count());
+    }
 }

@@ -272,4 +272,26 @@ class StateStoreTest {
         ScanState read = loaded(StateStore.load(file, WORLD));
         assertTrue(read.regions().isEmpty());
     }
+
+    @Test
+    void biomeKeysThatAreNoResourceLocationsAreDroppedWhenTheStateIsLoaded() throws IOException {
+        Path file = dir.resolve("state.nbt.gz");
+        CompoundBinaryTag biomes = CompoundBinaryTag.builder()
+                .putLongArray("minecraft:plains", bits(1))
+                .putLongArray("plains", bits(2))
+                .putLongArray("minecraft:<img src=x onerror=1>", bits(3))
+                .putLongArray("Minecraft:Plains", bits(4))
+                .putLongArray("minecraft:" + "a".repeat(300), bits(5))
+                .build();
+        CompoundBinaryTag region = CompoundBinaryTag.builder()
+                .put("timestamps", validTimestamps())
+                .put("structures", ListBinaryTag.empty())
+                .put("biomes", biomes)
+                .build();
+        writeTag(file, rootTag(ScanState.FORMAT_VERSION, WORLD, region));
+
+        ScanState read = loaded(StateStore.load(file, WORLD));
+
+        assertEquals(List.of("minecraft:plains"), new ArrayList<>(read.regions().get("r.0.0.mca").biomes().keySet()));
+    }
 }

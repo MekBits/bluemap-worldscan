@@ -53,9 +53,22 @@ final class ScanPass {
     private final String addonVersion;
     private final ClientAssetIcons icons;
     private final CancellationToken cancel;
+    private final BiomeBuilder biomeBuilder;
+
+    /** Builds the biome sets of a world; tests replace it. */
+    @FunctionalInterface
+    interface BiomeBuilder {
+        List<LayerSet> build(ScanState state, AddonConfig config, BiomeNames names);
+    }
 
     ScanPass(Path addonFolder, AddonConfig config, String scannerId, String addonVersion, ClientAssetIcons icons,
             CancellationToken cancel) {
+        this(addonFolder, config, scannerId, addonVersion, icons, cancel, LayerBuilder::buildBiomes);
+    }
+
+    ScanPass(Path addonFolder, AddonConfig config, String scannerId, String addonVersion, ClientAssetIcons icons,
+            CancellationToken cancel, BiomeBuilder biomeBuilder) {
+        this.biomeBuilder = biomeBuilder;
         this.addonFolder = addonFolder;
         this.config = config;
         this.scannerId = scannerId;
@@ -91,8 +104,7 @@ final class ScanPass {
         if (outcome.cancelled()) {
             return false;
         }
-        publishLayers(world, outcome.state());
-        return true;
+        return publishLayers(world, outcome.state());
     }
 
     /** Deprecated in the API, but still how an addon finds the dimension folder of a world. */
@@ -131,17 +143,23 @@ final class ScanPass {
         }
     }
 
-    private void publishLayers(CapturedWorld world, ScanState state) {
+    /** @return false when the scan was cancelled before every map was done */
+    private boolean publishLayers(CapturedWorld world, ScanState state) {
         Map<String, byte[]> pngByLayer = icons.pngByLayer();
         // The biome sets hold no icon URLs, so they are the same on every map of the world.
         List<LayerSet> biomeSets = buildBiomes(world, state);
         for (MapLayers map : world.maps()) {
+            // A reload or stop during the build must not write layers after the addon is disabled.
+            if (cancel.isCancelled()) {
+                return false;
+            }
             try {
                 publishMap(map, state, pngByLayer, biomeSets);
             } catch (IOException | RuntimeException e) {
                 Log.warn("cannot store the layers of map " + map.map().getId(), e);
             }
         }
+        return !cancel.isCancelled();
     }
 
     private List<LayerSet> buildBiomes(CapturedWorld world, ScanState state) {
@@ -149,10 +167,16 @@ final class ScanPass {
             return List.of();
         }
         long start = System.nanoTime();
-        List<LayerSet> sets = LayerBuilder.buildBiomes(state, config, BiomeNames.fromClientJar(icons.clientJar().orElse(null)));
-        Log.info("built " + sets.size() + " biome layers of world " + world.id() + " in "
-                + TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - start) + " s");
-        return sets;
+        try {
+            List<LayerSet> sets = biomeBuilder.build(state, config, BiomeNames.fromClientJar(icons.clientJar().orElse(null)));
+            Log.info("built " + sets.size() + " biome layers of world " + world.id() + " in "
+                    + TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - start) + " s");
+            return sets;
+        } catch (RuntimeException e) {
+            // The structure layers and the other worlds do not depend on the biomes.
+            Log.warn("cannot build the biome layers of world " + world.id() + "; its structure layers are stored without them", e);
+            return List.of();
+        }
     }
 
     private void publishMap(
