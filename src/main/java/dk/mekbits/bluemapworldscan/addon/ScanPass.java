@@ -148,7 +148,9 @@ final class ScanPass {
         String sha1 = Sha1.hex(json);
         long previousGeneration = -1;
         if (LayerStore.readManifest(map.storage()) instanceof Loaded.Ok<Manifest>(Manifest stored)) {
-            if (stored.layersSha1().equals(sha1)) {
+            // Identical layers stored by another scanner are stored again as this instance's own, so the
+            // manifest names the scanner that is running now and the warning stops once the roles have moved.
+            if (stored.layersSha1().equals(sha1) && stored.scannerId().equals(scannerId)) {
                 Log.info("the layers of map " + mapId + " are unchanged");
                 return;
             }

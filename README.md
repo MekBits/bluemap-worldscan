@@ -81,7 +81,9 @@ does not load a new version of an addon that is already loaded.
 
 Exactly one instance per map storage should scan. The other instances show what it stored. The
 manifest names the scanner. A scanner that finds another scanner's id in a map's manifest logs a
-warning.
+warning. When it then stores the same layers, they are stored again under its own id, so the
+warning shows once when the scanning role moves from one instance to another, and keeps showing
+only while two instances really alternate.
 
 | Setup | What the addon does |
 |---|---|
@@ -258,7 +260,7 @@ standard error on every platform. Look for:
   too. Structure and biome ids the addon does not know are listed at the end of the line: the first
   20 of each kind, then how many more.
 - `stored generation G of the layers of map <id> (N markers)` when new layers were stored, or
-  `the layers of map <id> are unchanged`.
+  `the layers of map <id> are unchanged` when this instance stored these very layers before.
 - `showing generation G of map <id> (N layers)` when an instance puts a stored generation on its
   map.
 

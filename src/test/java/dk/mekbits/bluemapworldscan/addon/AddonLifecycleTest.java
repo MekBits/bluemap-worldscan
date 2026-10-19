@@ -259,6 +259,39 @@ class AddonLifecycleTest {
     }
 
     @Test
+    void identicalLayersStoredByAnotherScannerAreTakenOverSoTheWarningStopsOnceTheRolesHaveMoved() throws IOException {
+        InMemoryAssetStorage shared = new InMemoryAssetStorage("overworld");
+        Path dimension = TestWorlds.withMonument(temp.resolve("world"));
+        FakeBlueMap commandLine = api(false, dimension, new InMemoryBlueMapMap("overworld", shared));
+        AddonLifecycle first = lifecycle(addonFolder("first", null));
+        first.onEnable(commandLine);
+        first.onDisable(commandLine);
+        Manifest storedByFirst = assertOk(LayerStore.readManifest(shared));
+        Path secondFolder = addonFolder("second", null);
+        AddonLifecycle second = lifecycle(secondFolder);
+
+        try (LogCapture log = new LogCapture()) {
+            second.onEnable(commandLine);
+            second.onDisable(commandLine);
+
+            assertEquals(1, log.warnings().stream().filter(message -> message.contains("another scanner")).count(),
+                    "the roles moved: one warning, " + log.warnings());
+        }
+        Manifest takenOver = assertOk(LayerStore.readManifest(shared));
+        assertEquals(AddonFolder.scannerId(secondFolder), takenOver.scannerId());
+        assertEquals(storedByFirst.layersSha1(), takenOver.layersSha1(), "the layers themselves are the same");
+        assertTrue(takenOver.generation() > storedByFirst.generation());
+
+        try (LogCapture log = new LogCapture()) {
+            second.onEnable(commandLine);
+            second.onDisable(commandLine);
+
+            assertTrue(log.warnings().isEmpty(), "the second scanner is the only one now: " + log.warnings());
+        }
+        assertEquals(takenOver, assertOk(LayerStore.readManifest(shared)), "the same scanner with the same layers stores nothing");
+    }
+
+    @Test
     void layersStoredByANewerAddonAreKeptAndTheScannerSaysSo() throws IOException {
         InMemoryAssetStorage shared = new InMemoryAssetStorage("overworld");
         byte[] manifest = "{\"formatVersion\":2,\"generation\":5,\"scannerId\":\"s\",\"addonVersion\":\"2.0.0\",\"layersSha1\":\"x\"}"
