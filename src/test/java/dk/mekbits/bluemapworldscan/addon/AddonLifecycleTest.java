@@ -15,10 +15,12 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.zip.GZIPOutputStream;
@@ -34,6 +36,8 @@ import dk.mekbits.bluemapworldscan.testsupport.FakeBlueMap.FakeWorld;
 import dk.mekbits.bluemapworldscan.testsupport.InMemoryAssetStorage;
 import dk.mekbits.bluemapworldscan.testsupport.InMemoryBlueMapMap;
 import dk.mekbits.bluemapworldscan.testsupport.LogCapture;
+import dk.mekbits.bluemapworldscan.testsupport.TestRegions;
+import dk.mekbits.bluemapworldscan.testsupport.TestRegions.TestChunk;
 import dk.mekbits.bluemapworldscan.testsupport.TestWorlds;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -371,22 +375,32 @@ class AddonLifecycleTest {
     void onEnableHandsOffAtOnceAndThePluginStopsTheScanOnDisable() throws IOException {
         Path folder = addonFolder("addon", "{\"maxChunksPerSecond\": 20}");
         InMemoryBlueMapMap map = new InMemoryBlueMapMap("overworld");
-        // The first region is read in a fraction of a second, the second takes 20 s.
-        Path dimension = TestWorlds.withChunks(TestWorlds.withChunks(temp.resolve("world"), 0, 1), 1, 400);
+        // The first region is read in a fraction of a second; the third takes 20 s. The scan logs nothing
+        // when a region is finished, so the second region is a marker: its only chunk cannot be read, and
+        // the scan says so at debug level when it gets there, which is after the first region is finished.
+        Path dimension = TestWorlds.withChunks(TestWorlds.withChunks(temp.resolve("world"), 0, 1), 2, 400);
+        TestRegions.write(dimension.resolve("region").resolve("r.1.0.mca"),
+                Map.of(0, new TestChunk(new byte[0], 1_700_000_000, 127, false)));
         FakeBlueMap plugin = api(true, dimension, map);
         AddonLifecycle lifecycle = lifecycle(folder);
 
+        Logger addonLogger = Logger.getLogger("dk.mekbits.bluemapworldscan");
+        Level levelBefore = addonLogger.getLevel();
+        addonLogger.setLevel(Level.FINE);
         try (LogCapture log = new LogCapture()) {
             long start = System.nanoTime();
             lifecycle.onEnable(plugin);
             assertTrue(Duration.ofNanos(System.nanoTime() - start).toMillis() < 1000, "onEnable only hands the work over");
-            Await.until("the scan to start", () -> log.messages(Level.INFO).stream()
-                    .anyMatch(message -> message.contains("scanning world")));
+            // Disabling before the first region is finished would cancel the scan with nothing to keep.
+            Await.until("the scan to finish the first region and reach the second", () -> log.messages(Level.FINE).stream()
+                    .anyMatch(message -> message.contains("r.1.0.mca chunk 0")));
 
             start = System.nanoTime();
             lifecycle.onDisable(plugin);
 
             assertTrue(Duration.ofNanos(System.nanoTime() - start).toSeconds() < 5, "disable waits for the scan to stop, at most 5 s");
+        } finally {
+            addonLogger.setLevel(levelBefore);
         }
         assertTrue(map.getMarkerSets().isEmpty(), "a cancelled scan stores no layers");
         assertTrue(map.storage().names().isEmpty());
