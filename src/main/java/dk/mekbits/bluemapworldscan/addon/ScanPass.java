@@ -3,6 +3,7 @@ package dk.mekbits.bluemapworldscan.addon;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
@@ -18,8 +19,8 @@ import dk.mekbits.bluemapworldscan.config.AddonFolder;
 import dk.mekbits.bluemapworldscan.icon.ClientAssetIcons;
 import dk.mekbits.bluemapworldscan.icon.IconAssets;
 import dk.mekbits.bluemapworldscan.layer.LayersFile;
-import dk.mekbits.bluemapworldscan.layer.LayersFile.Area;
 import dk.mekbits.bluemapworldscan.layer.LayersFile.LayerSet;
+import dk.mekbits.bluemapworldscan.layer.ServedSize;
 import dk.mekbits.bluemapworldscan.scan.CancellationToken;
 import dk.mekbits.bluemapworldscan.scan.ScanLimits;
 import dk.mekbits.bluemapworldscan.scan.ScanOutcome;
@@ -37,15 +38,6 @@ import dk.mekbits.bluemapworldscan.util.Sha1;
  * checkpoints during a pass go to the local state file only.
  */
 final class ScanPass {
-
-    /** Warn from here on; the web app should load less than 10 MB of markers. */
-    private static final long LAYERS_WARNING_BYTES = 8L << 20;
-    /** What BlueMap's {@code live/markers.json} takes per point marker, measured on a large world (popup included). */
-    private static final int POI_SERVED_BYTES = 500;
-    /** What it takes per shape marker, before its corners. */
-    private static final int AREA_SERVED_BYTES = 330;
-    /** What it takes per corner of a shape: {@code {"x":-12345,"z":-12345},}. */
-    private static final int CORNER_SERVED_BYTES = 23;
 
     private final Path addonFolder;
     private final AddonConfig config;
@@ -193,7 +185,7 @@ final class ScanPass {
                 LayerBuilder.combine(LayerBuilder.buildStructures(state, config, iconUrls), biomeSets));
         byte[] json = LayerStore.toJson(layers);
         long servedBytes = estimatedServedBytes(layers);
-        if (servedBytes > LAYERS_WARNING_BYTES) {
+        if (oversized(servedBytes)) {
             Log.warn(oversizedLayersMessage(mapId, servedBytes));
         }
 
@@ -214,24 +206,17 @@ final class ScanPass {
         map.refreshIfNewer();
     }
 
-    /**
-     * About how many bytes the layers take in BlueMap's {@code live/markers.json}. The stored JSON is
-     * no guide: a corner is about 9 bytes there and 23 in the file the browser loads.
-     */
     static long estimatedServedBytes(LayersFile layers) {
-        long bytes = 0;
-        for (LayerSet set : layers.sets()) {
-            bytes += (long) set.pois().size() * POI_SERVED_BYTES;
-            for (Area area : set.areas()) {
-                bytes += AREA_SERVED_BYTES + (long) CORNER_SERVED_BYTES
-                        * (area.outline().size() + area.holes().stream().mapToInt(List::size).sum());
-            }
-        }
-        return bytes;
+        return ServedSize.estimate(layers);
+    }
+
+    static boolean oversized(long servedBytes) {
+        return servedBytes > ServedSize.WARNING_BYTES;
     }
 
     static String oversizedLayersMessage(String mapId, long servedBytes) {
-        return "the layers of map " + mapId + " are about " + (servedBytes >> 20) + " MB of markers, which every browser loads; "
+        return "the layers of map " + mapId + " are about " + String.format(Locale.ROOT, "%.1f", servedBytes / 1e6)
+                + " MB of markers, which every browser loads (the web app should load less than 10 MB); "
                 + "make them smaller with structures.disabledLayers, biomes.cellSizeChunks (a larger cell) or biomes.disabled";
     }
 
