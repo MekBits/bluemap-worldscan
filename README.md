@@ -34,19 +34,28 @@ needs the Java version BlueMap 5.29 runs on, Java 25.
 - **Stores the finished layers once per map.** After a complete pass over a world, the scanning
   instance stores the layers in the asset storage of each map of that world. Every BlueMap instance
   that uses that storage and runs the addon shows the same layers from it.
-- **Covers the whole world.** The layers hold every structure found in the world, also when a map's
-  render area is limited: the addon does not read BlueMap's render bounds.
+- **Covers the whole world.** The layers hold every structure found in the world, and the biome
+  layers outline every chunk whose biomes have been generated, also when a map's render area or mask
+  is limited: the addon does not read BlueMap's render bounds.
 
 The layers appear after the first complete pass. On a large world that takes hours (see
 [Performance](#performance)), and nothing is stored before the pass is done.
 
 ## Install
 
-Use the same addon version on every BlueMap instance that uses the same map storage. An instance on
-an older version cannot show layers that a newer version stored: release 1.0.0 keeps the layers it
-shows and logs `update bluemap-worldscan on this instance` when the storage holds layers stored by
-1.1.0 or later. Release 1.1.0 reads the layers that 1.0.0 stored, and replaces them after its first
-scan.
+Use the same addon version on every BlueMap instance that uses the same map storage, and upgrade
+all of them together. Release 1.0.0 cannot read the layers file that 1.1.0 stores (format version
+2). An instance still on 1.0.0 keeps showing the sets it has and logs
+`update bluemap-worldscan on this instance`, until it restarts or reloads; then it shows no
+worldscan layers. A webserver-only CLI (`-w`) that is fed by such an instance shows none either.
+Release 1.1.0 reads the layers that 1.0.0 stored, and replaces them after its first scan.
+
+**Upgrading from 1.0.0.** Release 1.0.0 wrote its whole default settings into the `config.json` it
+created, so that file holds `"cellSizeChunks": 4`. Release 1.1.0 keeps the value from the file, and
+4 chunks per cell is a lot of corners on a large overworld: the measured one would take about 18 MB
+in `live/markers.json`, and the addon skips the biome layers of a world that big (see
+[Biomes](#biomes)). After upgrading, set `biomes.cellSizeChunks` to 16, or delete the `biomes` block
+from the file to get the default.
 
 1. On an instance that must not scan, create the config first. Put
    `<bluemap config>/bluemap-worldscan/config.json` in place with this content:
@@ -134,12 +143,12 @@ A few consequences:
 | `refreshMinutes` | `5` | How often an instance with `scan` off looks for a new generation of layers. `0` turns it off. An instance that scans does not use it. |
 | `structures.disabledLayers` | `["mineshaft", "buried_treasure"]` | Layer ids that are not built. Scanning instance only. See the table below. |
 | `biomes.enabled` | `true` | Whether biome layers are built. `false` builds none. Scanning instance only. |
-| `biomes.cellSizeChunks` | `16` | The resolution of the biome areas: the side of a cell in chunks. At least 1. A larger cell gives a coarser, smaller layer. Scanning instance only. See [Biomes](#biomes). |
+| `biomes.cellSizeChunks` | `16` | The resolution of the biome areas: the side of a cell in chunks. From 1 to 1,875,000 (the world border, 30,000,000 blocks, in chunks). A larger cell gives a coarser, smaller layer. Scanning instance only. See [Biomes](#biomes). |
 | `biomes.disabled` | `[]` | Biomes that are not built, as ids with or without the namespace: `["plains", "minecraft:river", "some_pack:crystal_caves"]`. Scanning instance only. |
 
 A config that cannot be read, or that holds an impossible value (such as `maxChunksPerSecond` below
-1), logs one line and gives the defaults with `scan` off. A typo never starts a scan nobody asked
-for.
+1, or a `biomes.cellSizeChunks` outside its range), logs one line and gives the defaults with
+`scan` off. A typo never starts a scan nobody asked for.
 
 To start over, create an empty file named `reset` in the addon folder. At the next enable, an
 instance with `scan` on deletes the stored scan state and the `reset` file, and scans every chunk.
@@ -201,6 +210,18 @@ name (a datapack's, or one newer than the client jar) is named from its id, as "
   blocks). A cell belongs to a biome when any chunk in it has the biome, so an area reaches up to a
   cell beyond the real edge of the biome. Cells that touch are joined into one area, with holes
   where there are any.
+- A world gets layers for at most 512 biomes (vanilla has about 65). Above that the first 512 by id
+  get one, and a warning says how many were left out. Biomes in `biomes.disabled` do not count.
+- Before the areas are worked out, the addon counts the cells of each biome. If the cells could
+  take more than 100,000,000 bytes of markers, at 449 bytes for each cell (an area of 365 bytes and
+  four corners of 21, which is the most one cell adds), that is more than 222,717 biome and cell
+  pairs, the world gets no biome layers and a warning names `biomes.cellSizeChunks`. The measured
+  overworld is over that limit at 8 chunks per cell and under it at 12. The structure layers are
+  not affected.
+- The biome layers outline every chunk whose biomes have been generated, at the resolution of the
+  cell, also outside a map's render bounds or mask. With small cells that is close to the per-chunk
+  biome data of the world, and it is shown to everyone who can open the map. `biomes.disabled` hides
+  single biomes; only `biomes.enabled` `false` removes the footprint.
 - Only chunks whose biomes have been generated count. A chunk at the edge of the generated land
   that is still half built does not show as plains.
 - An area is drawn at height 63, through the terrain, in a colour of the biome at 45 % opacity with
@@ -260,8 +281,9 @@ In that world mineshafts alone were more than half of all structures (14,222 of 
 are why `mineshaft` is not built by default. `buried_treasure` is not built either, to keep the file
 smaller. If your world is large and the web app is slow to load, look at this number first.
 
-A biome area takes about 330 bytes and 23 bytes for each corner of its outline. Every biome layer
-is in the file whether it is shown or not.
+A biome area takes about 365 bytes and 21 bytes for each corner of its outline (fitted to the same
+overworld measured at five cell sizes, within 1 %). Every biome layer is in the file whether it is
+shown or not.
 
 With the default settings that world gives a `live/markers.json` of 9,162,685 bytes: the default
 structure layers (5,614,445 bytes) and the biome layers at 16 chunks per cell (3,548,241 bytes). The
@@ -269,17 +291,18 @@ same overworld, which has 55 biomes, at other cell sizes:
 
 | `biomes.cellSizeChunks` | Biome areas | Corners | Biomes in `live/markers.json` | Whole file |
 |---|---|---|---|---|
-| 4 | 16,469 | 321,852 | 12,827,634 bytes | 18,442,078 bytes |
-| 8 | 10,241 | 150,996 | 6,937,932 bytes | 12,552,376 bytes |
 | 12 | 7,383 | 96,108 | 4,734,129 bytes | 10,348,573 bytes |
 | 16 (default) | 5,772 | 67,744 | 3,548,241 bytes | 9,162,685 bytes |
 | 32 | 2,968 | 30,798 | 1,746,280 bytes | 7,360,724 bytes |
 
+At 4 and 8 chunks per cell this world has more biome and cell pairs than the limit under
+[Biomes](#biomes) allows, so it gets no biome layers there.
+
 With the biome layers off (`biomes.enabled` `false`) the file is the 5,614,445 bytes of the
 structures.
 
-When the markers of a map are estimated at more than 8 MiB in `live/markers.json`, the scanner logs
-a warning with the settings that make them smaller.
+When the markers of a map are estimated at more than 10,000,000 bytes in `live/markers.json`, the
+scanner logs a warning with the settings that make them smaller.
 
 ## Performance
 
@@ -311,6 +334,9 @@ standard error on every platform. Look for:
 - `stored generation G of the layers of map <id> (N markers)` when new layers were stored, or
   `the layers of map <id> are unchanged` when this instance stored these very layers before.
 - `built N biome layers of world <id> in S s` when the biome areas of a world were worked out.
+  A warning instead says that the biome layers of a world were skipped (too many cells), that a
+  world has more than 512 biomes, or that they could not be built; the structure layers are stored
+  in every case.
 - `showing generation G of map <id> (N layers)` when an instance puts a stored generation on its
   map.
 
@@ -334,18 +360,22 @@ BlueMap's webserver serves a map's asset storage to anyone who can reach the map
 three things there, per map:
 
 - `bluemap-worldscan-layers.json.gz`, the layers: the markers and biome areas of the layers that are
-  built, with their positions and popups. This is what `live/markers.json` shows anyway.
+  built, with their positions and popups. This is what `live/markers.json` shows anyway. The biome
+  areas outline every chunk whose biomes have been generated, at the resolution of
+  `biomes.cellSizeChunks`, also outside a map's render bounds or mask.
 - `bluemap-worldscan-manifest.json`: the format version, the generation number, the scanner id (a
   random UUID), the addon version and a SHA-1 of the layers.
 - `bluemap-worldscan-icon-<layer>-<hash>.png`, the icons.
 
 Anyone who can open the map can see the structure positions and the biome areas of the layers that
-are built. If that is a problem for a layer, put it in `structures.disabledLayers` or
-`biomes.disabled`.
+are built. With small cells the biome areas are close to the per-chunk biome data of the world.
+If that is a problem for a structure layer, put it in `structures.disabledLayers`. `biomes.disabled`
+hides single biomes; only `biomes.enabled` `false` removes the footprint of the explored world.
 
 These stay with the scanning instance, in its addon folder, and are never put in the storage: the
 scan state (the save time of every chunk, the structures of layers you disabled, the biomes of each
-chunk), the config, the client jar and the `scanner-id` file. The value in `scanner-id` is the
+chunk exactly, not at the cell size of the biome layers), the config, the client jar and the
+`scanner-id` file. The value in `scanner-id` is the
 scanner id in the public manifest. Instances that do not scan read no world files and download
 nothing.
 
