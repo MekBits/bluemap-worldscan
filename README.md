@@ -332,5 +332,5 @@ MIT, see `LICENSE`. `THIRD_PARTY_NOTICES.md` has the licence texts.
   layer names, zoom tiers, the popup, and the way icons are made from the client jar.
 - [BlueMap](https://github.com/BlueMap-Minecraft/BlueMap) (MIT): the region file handling is
   modelled on its reader.
-- Bundled, and relocated so they cannot clash with BlueMap's own copies: adventure-nbt, lz4-java
-  and Gson.
+- Bundled, and relocated so they cannot clash with BlueMap's own copies: adventure-nbt, lz4-java,
+  Gson and JTS.
