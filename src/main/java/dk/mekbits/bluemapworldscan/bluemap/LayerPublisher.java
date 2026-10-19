@@ -73,6 +73,8 @@ public final class LayerPublisher {
         float alpha = Math.round((area.fillArgb() >>> 24) / 255f * 100f) / 100f;
         ShapeMarker.Builder marker = ShapeMarker.builder()
                 .label(area.label())
+                // BlueMap's web app puts detail, or the label when there is no detail, into the popup as HTML.
+                .detail(MarkerData.escapeHtml(area.label()))
                 .shape(toShape(area.outline()), area.y())
                 .depthTestEnabled(false)
                 .lineWidth(1)

@@ -6,23 +6,41 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 import com.flowpowered.math.vector.Vector2d;
 import de.bluecolored.bluemap.api.markers.MarkerSet;
 import de.bluecolored.bluemap.api.markers.POIMarker;
 import de.bluecolored.bluemap.api.markers.ShapeMarker;
 import de.bluecolored.bluemap.api.math.Shape;
+import dk.mekbits.bluemapworldscan.biome.BiomeNames;
+import dk.mekbits.bluemapworldscan.config.AddonConfig;
 import dk.mekbits.bluemapworldscan.layer.LayersFile;
 import dk.mekbits.bluemapworldscan.layer.LayersFile.Area;
 import dk.mekbits.bluemapworldscan.layer.LayersFile.LayerSet;
 import dk.mekbits.bluemapworldscan.layer.LayersFile.Poi;
 import dk.mekbits.bluemapworldscan.testsupport.InMemoryBlueMapMap;
+import dk.mekbits.bluemapworldscan.testsupport.TestStates;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class LayerPublisherTest {
+
+    private static final String SCRIPT = "<img src=x onerror=1>";
+    private static final String ESCAPED_SCRIPT = "&lt;img src=x onerror=1&gt;";
+
+    @TempDir
+    Path temp;
 
     private final LayerPublisher publisher = new LayerPublisher();
 
@@ -216,5 +234,52 @@ class LayerPublisherTest {
         assertSame(foreign, map.getMarkerSets().get("homes"));
         assertEquals(Set.of("homes"), map.getMarkerSets().keySet());
         assertNotNull(other.getMarkerSets().get("fortress"));
+    }
+
+    private static String popupOfTheOnlyArea(InMemoryBlueMapMap map, String setId) {
+        MarkerSet set = map.getMarkerSets().get(setId);
+        assertEquals(1, set.getMarkers().size());
+        return ((ShapeMarker) set.getMarkers().values().iterator().next()).getDetail();
+    }
+
+    @Test
+    void anAreaLabelWithHtmlIsEscapedInThePopupBecauseBlueMapShowsTheLabelAsHtml() {
+        InMemoryBlueMapMap map = new InMemoryBlueMapMap("overworld");
+        Area area = new Area("0", SCRIPT, 63f, List.of(new int[] {0, 0}, new int[] {0, 16}, new int[] {16, 0}), List.of(), 0x73336699);
+
+        publisher.publish(map, layers(biomeSet("biome", area)));
+
+        ShapeMarker marker = (ShapeMarker) map.getMarkerSets().get("biome").get("0");
+        assertEquals(ESCAPED_SCRIPT, marker.getDetail(), "the popup shows detail when there is one, else the raw label");
+    }
+
+    @Test
+    void aBiomeNamedByAHostileLanguageFileIsEscapedInThePopup() throws IOException {
+        Path jar = temp.resolve("client.jar");
+        try (OutputStream file = Files.newOutputStream(jar); ZipOutputStream zip = new ZipOutputStream(file)) {
+            zip.putNextEntry(new ZipEntry("assets/minecraft/lang/en_us.json"));
+            zip.write(("{\"biome.minecraft.plains\": \"" + SCRIPT.replace("\"", "\\\"") + "\"}").getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+        }
+        InMemoryBlueMapMap map = new InMemoryBlueMapMap("overworld");
+        List<LayerSet> sets = LayerBuilder.buildBiomes(
+                TestStates.biomes(Map.of("minecraft:plains", new int[] {0})), AddonConfig.defaults(), BiomeNames.fromClientJar(jar));
+
+        publisher.publish(map, new LayersFile(LayersFile.FORMAT_VERSION, sets));
+
+        assertEquals(ESCAPED_SCRIPT, popupOfTheOnlyArea(map, sets.getFirst().id()));
+    }
+
+    @Test
+    void aBiomeKeyWithHtmlCharactersIsEscapedInThePopup() {
+        InMemoryBlueMapMap map = new InMemoryBlueMapMap("overworld");
+        List<LayerSet> sets = LayerBuilder.buildBiomes(
+                TestStates.biomes(Map.of("minecraft:<b>\"x\"&'y'", new int[] {0})), AddonConfig.defaults(), BiomeNames.fromIds());
+
+        publisher.publish(map, new LayersFile(LayersFile.FORMAT_VERSION, sets));
+
+        String popup = popupOfTheOnlyArea(map, sets.getFirst().id());
+        assertTrue(popup.contains("&lt;b&gt;&quot;x&quot;&amp;&#39;y&#39;"), popup);
+        assertFalse(popup.contains("<"), popup);
     }
 }
