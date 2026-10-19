@@ -62,23 +62,4 @@ public final class TestStates {
         regions.put("r.0.0.mca", new RegionEntry(timestamps, List.of(), biomes));
         return new ScanState(ScanState.FORMAT_VERSION, "world-1", regions);
     }
-
-    /**
-     * A state whose biome {@code biome} fills the first {@code chunks} chunks of a row of regions
-     * {@code r.0.0.mca}, {@code r.1.0.mca} and so on: with one chunk per cell it has exactly that many cells.
-     */
-    public static ScanState biomeChunks(String biome, long chunks) {
-        TreeMap<String, RegionEntry> regions = new TreeMap<>();
-        int[] timestamps = new int[1024];
-        Arrays.fill(timestamps, -1);
-        for (int region = 0; chunks > 0; region++) {
-            BitSet bits = new BitSet(1024);
-            bits.set(0, (int) Math.min(chunks, 1024));
-            chunks -= 1024;
-            TreeMap<String, long[]> biomes = new TreeMap<>();
-            biomes.put(biome, Arrays.copyOf(bits.toLongArray(), 16));
-            regions.put("r." + region + ".0.mca", new RegionEntry(timestamps, List.of(), biomes));
-        }
-        return new ScanState(ScanState.FORMAT_VERSION, "world-1", regions);
-    }
 }

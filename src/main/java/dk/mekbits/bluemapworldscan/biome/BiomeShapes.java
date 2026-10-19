@@ -35,10 +35,17 @@ public final class BiomeShapes {
 
     /** The most biomes one world gets layers for; vanilla has about 65 and a data pack adds few. */
     public static final int MAX_BIOMES = 512;
-    /** The most the areas of one world may take in {@code live/markers.json}, by {@link ServedSize#CELL_UPPER_BOUND_BYTES} per cell. */
+    /**
+     * The most the biome areas of one world may take in {@code live/markers.json}, estimated from the
+     * finished polygons with {@link ServedSize}.
+     */
     public static final long MAX_ESTIMATED_BYTES = 100_000_000L;
-    /** The most (biome, cell) pairs that stay under {@link #MAX_ESTIMATED_BYTES}. */
-    public static final long MAX_CELLS = MAX_ESTIMATED_BYTES / ServedSize.CELL_UPPER_BOUND_BYTES;
+    /**
+     * The most (biome, cell) pairs held before the union. A pair in a {@code TreeSet} takes 72
+     * bytes (measured), so this allows about 144 MB of heap. Wildwood's overworld has 617,761
+     * pairs at 4 chunks per cell, 222,876 at 8, 1,890,859 at 2 and 6,301,195 at 1.
+     */
+    public static final long MAX_CELLS = 2_000_000L;
 
     private static final int REGION_CHUNKS = 32;
     private static final int BLOCKS_PER_CHUNK = 16;
@@ -51,22 +58,31 @@ public final class BiomeShapes {
         return build(state, cellSizeChunks, biome -> true);
     }
 
+    /** {@link #build(ScanState, int, Predicate, long, long)} with the limits of {@link #MAX_CELLS} and {@link #MAX_ESTIMATED_BYTES}. */
+    public static Map<String, List<Polygon>> build(ScanState state, int cellSizeChunks, Predicate<String> wanted) {
+        return build(state, cellSizeChunks, wanted, MAX_CELLS, MAX_ESTIMATED_BYTES);
+    }
+
     /**
      * The polygons of each wanted biome in the state, keyed by biome id in sorted order. A biome
      * with no chunk in the state has no entry.
      *
      * <p>A world with more than {@link #MAX_BIOMES} wanted biomes gets the first ones by id and a
-     * warning. A world whose cells could take more than {@link #MAX_ESTIMATED_BYTES} of markers
-     * (counted before anything is unioned, at the most one area and four corners per cell) gets no
-     * polygons and a warning that names {@code biomes.cellSizeChunks}.
+     * warning. Two guards give no polygons and a warning that names {@code biomes.cellSizeChunks}:
+     * more than {@code maxCells} (biome, cell) pairs, counted while they are collected and before
+     * anything is unioned, which bounds the heap; and polygons that are estimated at more than
+     * {@code maxBytes} of markers, which bounds the payload.
      *
      * @param state the scan state, its regions named {@code r.<x>.<z>.mca}
      * @param cellSizeChunks the side of a cell in chunks, at least 1
      * @param wanted which biome ids to build
+     * @param maxCells the most (biome, cell) pairs
+     * @param maxBytes the most estimated bytes of markers
      * @throws IllegalArgumentException when {@code cellSizeChunks} is below 1 or a region name is
      *     not a region file name
      */
-    public static Map<String, List<Polygon>> build(ScanState state, int cellSizeChunks, Predicate<String> wanted) {
+    public static Map<String, List<Polygon>> build(
+            ScanState state, int cellSizeChunks, Predicate<String> wanted, long maxCells, long maxBytes) {
         if (cellSizeChunks < 1) {
             throw new IllegalArgumentException("cellSizeChunks must be at least 1: " + cellSizeChunks);
         }
@@ -86,10 +102,10 @@ public final class BiomeShapes {
                     long chunkX = (long) origin[0] * REGION_CHUNKS + index % REGION_CHUNKS;
                     long chunkZ = (long) origin[1] * REGION_CHUNKS + index / REGION_CHUNKS;
                     if (cells.add(new Cell(Math.floorDiv(chunkX, (long) cellSizeChunks), Math.floorDiv(chunkZ, (long) cellSizeChunks)))
-                            && ++pairs > MAX_CELLS) {
+                            && ++pairs > maxCells) {
                         Log.warn("the biome layers of world " + state.worldId() + " are skipped: at biomes.cellSizeChunks "
-                                + cellSizeChunks + " they would take more than " + MAX_ESTIMATED_BYTES / 1_000_000
-                                + " MB of markers. Raise biomes.cellSizeChunks to make the cells larger");
+                                + cellSizeChunks + " there are more than " + maxCells + " cells to work out. "
+                                + "A larger biomes.cellSizeChunks fixes this");
                         return Map.of();
                     }
                 }
@@ -98,12 +114,35 @@ public final class BiomeShapes {
 
         GeometryFactory factory = new GeometryFactory();
         SortedMap<String, List<Polygon>> shapes = new TreeMap<>();
-        cellsByBiome.forEach((biome, cells) -> {
-            if (!cells.isEmpty()) {
-                shapes.put(biome, polygons(cells, cellSizeChunks, factory));
+        long estimatedBytes = 0;
+        for (Map.Entry<String, TreeSet<Cell>> biome : cellsByBiome.entrySet()) {
+            if (biome.getValue().isEmpty()) {
+                continue;
             }
-        });
+            List<Polygon> polygons = polygons(biome.getValue(), cellSizeChunks, factory);
+            estimatedBytes += servedBytes(polygons);
+            if (estimatedBytes > maxBytes) {
+                Log.warn("the biome layers of world " + state.worldId() + " are skipped: at biomes.cellSizeChunks "
+                        + cellSizeChunks + " they would take more than " + maxBytes / 1_000_000
+                        + " MB of markers. A larger biomes.cellSizeChunks fixes this");
+                return Map.of();
+            }
+            shapes.put(biome.getKey(), polygons);
+        }
         return shapes;
+    }
+
+    /** About how many bytes the polygons take in {@code live/markers.json}, as one area each. */
+    private static long servedBytes(List<Polygon> polygons) {
+        long bytes = 0;
+        for (Polygon polygon : polygons) {
+            long corners = polygon.getExteriorRing().getNumPoints() - 1;
+            for (int i = 0; i < polygon.getNumInteriorRing(); i++) {
+                corners += polygon.getInteriorRingN(i).getNumPoints() - 1;
+            }
+            bytes += ServedSize.AREA_BYTES + corners * ServedSize.CORNER_BYTES;
+        }
+        return bytes;
     }
 
     /** The first {@link #MAX_BIOMES} wanted biome ids of the state in id order; a longer list is logged. */

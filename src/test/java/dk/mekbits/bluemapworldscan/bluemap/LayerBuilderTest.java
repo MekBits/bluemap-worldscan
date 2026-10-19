@@ -18,7 +18,6 @@ import java.util.TreeMap;
 
 import dk.mekbits.bluemapworldscan.biome.BiomeColors;
 import dk.mekbits.bluemapworldscan.biome.BiomeNames;
-import dk.mekbits.bluemapworldscan.biome.BiomeShapes;
 import dk.mekbits.bluemapworldscan.config.AddonConfig;
 import dk.mekbits.bluemapworldscan.icon.IconAssets;
 import dk.mekbits.bluemapworldscan.layer.LayersFile;
@@ -432,34 +431,5 @@ class LayerBuilderTest {
             assertNotNull(biomeSet(sets, "pack-b511"));
             assertTrue(log.warnings().isEmpty(), log.warnings().toString());
         }
-    }
-
-    @Test
-    void aWorldWhoseCellsCouldTakeHundredMillionBytesStillGetsItsBiomeLayers() {
-        ScanState state = TestStates.biomeChunks("minecraft:plains", BiomeShapes.MAX_CELLS);
-
-        List<LayerSet> sets = LayerBuilder.buildBiomes(state, withBiomes(true, 1), NAMES);
-
-        assertEquals(1, sets.size());
-    }
-
-    @Test
-    void aWorldWithOneCellMoreThanTheLimitGetsNoBiomeLayersAndAWarningNamingTheCellSize() {
-        ScanState state = TestStates.biomeChunks("minecraft:plains", BiomeShapes.MAX_CELLS + 1);
-
-        try (LogCapture log = new LogCapture()) {
-            List<LayerSet> sets = LayerBuilder.buildBiomes(state, withBiomes(true, 1), NAMES);
-
-            assertTrue(sets.isEmpty());
-            assertTrue(log.warnings().stream().anyMatch(message -> message.contains("biomes.cellSizeChunks") && message.contains("world-1")),
-                    log.warnings().toString());
-        }
-    }
-
-    @Test
-    void aLargerCellBringsTheSameWorldUnderTheLimit() {
-        ScanState state = TestStates.biomeChunks("minecraft:plains", BiomeShapes.MAX_CELLS + 1);
-
-        assertEquals(1, LayerBuilder.buildBiomes(state, withBiomes(true, 16), NAMES).size());
     }
 }

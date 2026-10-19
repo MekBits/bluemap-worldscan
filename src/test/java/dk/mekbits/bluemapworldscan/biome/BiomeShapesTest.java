@@ -1,6 +1,7 @@
 package dk.mekbits.bluemapworldscan.biome;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Arrays;
 import java.util.BitSet;
@@ -8,8 +9,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
+import dk.mekbits.bluemapworldscan.layer.ServedSize;
 import dk.mekbits.bluemapworldscan.state.RegionEntry;
 import dk.mekbits.bluemapworldscan.state.ScanState;
+import dk.mekbits.bluemapworldscan.testsupport.LogCapture;
 import org.junit.jupiter.api.Test;
 import org.locationtech.jts.geom.Envelope;
 import org.locationtech.jts.geom.Polygon;
@@ -124,5 +127,81 @@ class BiomeShapesTest {
 
         assertEquals(1, polygons.size());
         assertEquals(2 * 16 * 16, polygons.get(0).getArea(), 1e-3);
+    }
+
+    private static List<Polygon> plains(ScanState state, int cellSizeChunks, long maxCells, long maxBytes) {
+        return BiomeShapes.build(state, cellSizeChunks, biome -> true, maxCells, maxBytes).get(BIOME);
+    }
+
+    @Test
+    void aWorldWithExactlyTheMostCellsIsBuilt() {
+        assertEquals(1, plains(state("r.0.0.mca", 0, 1, 2), 1, 3, Long.MAX_VALUE).size());
+    }
+
+    @Test
+    void aWorldWithOneCellMoreThanTheMostGetsNoPolygonsAndAWarningThatALargerCellFixes() {
+        try (LogCapture log = new LogCapture()) {
+            Map<String, List<Polygon>> shapes = BiomeShapes.build(state("r.0.0.mca", 0, 1, 2), 1, biome -> true, 2, Long.MAX_VALUE);
+
+            assertTrue(shapes.isEmpty());
+            assertTrue(log.warnings().stream().anyMatch(message -> message.contains("biomes.cellSizeChunks")
+                    && message.contains("larger") && message.contains("world-1")), log.warnings().toString());
+        }
+    }
+
+    @Test
+    void aLargerCellBringsTheSameChunksUnderTheCellLimit() {
+        assertEquals(1, plains(state("r.0.0.mca", 0, 1, 2, 32, 33, 34), 2, 2, Long.MAX_VALUE).size());
+    }
+
+    @Test
+    void polygonsEstimatedAtExactlyTheMostBytesAreKept() {
+        // A square of four corners: one area of 365 bytes and four corners of 21.
+        long square = ServedSize.AREA_BYTES + 4L * ServedSize.CORNER_BYTES;
+
+        assertEquals(1, plains(state("r.0.0.mca", 0, 1, 32, 33), 1, Long.MAX_VALUE, square).size());
+    }
+
+    @Test
+    void polygonsEstimatedAtOneByteMoreThanTheMostGetNoPolygonsAndAWarningThatALargerCellFixes() {
+        long square = ServedSize.AREA_BYTES + 4L * ServedSize.CORNER_BYTES;
+
+        try (LogCapture log = new LogCapture()) {
+            Map<String, List<Polygon>> shapes = BiomeShapes.build(
+                    state("r.0.0.mca", 0, 1, 32, 33), 1, biome -> true, Long.MAX_VALUE, square - 1);
+
+            assertTrue(shapes.isEmpty());
+            assertTrue(log.warnings().stream().anyMatch(message -> message.contains("biomes.cellSizeChunks") && message.contains("larger")),
+                    log.warnings().toString());
+        }
+    }
+
+    @Test
+    void theCornersOfHolesCountTowardsTheEstimate() {
+        // The ring of eight chunks: eight corners with its hole.
+        ScanState ring = state("r.0.0.mca", 0, 1, 2, 32, 34, 64, 65, 66);
+        long withHole = ServedSize.AREA_BYTES + 8L * ServedSize.CORNER_BYTES;
+
+        assertEquals(1, plains(ring, 1, Long.MAX_VALUE, withHole).size());
+        assertTrue(BiomeShapes.build(ring, 1, biome -> true, Long.MAX_VALUE, withHole - 1).isEmpty());
+    }
+
+    @Test
+    void theEstimateAddsUpOverTheBiomes() {
+        long square = ServedSize.AREA_BYTES + 4L * ServedSize.CORNER_BYTES;
+        ScanState one = state("r.0.0.mca", 0, 1, 32, 33);
+        TreeMap<String, long[]> biomes = new TreeMap<>(one.regions().get("r.0.0.mca").biomes());
+        biomes.put("minecraft:forest", biomes.get(BIOME));
+        TreeMap<String, RegionEntry> regions = new TreeMap<>();
+        regions.put("r.0.0.mca", new RegionEntry(one.regions().get("r.0.0.mca").timestamps(), List.of(), biomes));
+        ScanState two = new ScanState(ScanState.FORMAT_VERSION, "world-1", regions);
+
+        assertEquals(2, BiomeShapes.build(two, 1, biome -> true, Long.MAX_VALUE, 2 * square).size());
+        assertTrue(BiomeShapes.build(two, 1, biome -> true, Long.MAX_VALUE, 2 * square - 1).isEmpty());
+    }
+
+    @Test
+    void theCellLimitLeavesRoomForWildwoodsOverworldAtFourChunksPerCell() {
+        assertTrue(BiomeShapes.MAX_CELLS >= 2 * 617_761L, "617,761 pairs measured at 4 chunks per cell");
     }
 }

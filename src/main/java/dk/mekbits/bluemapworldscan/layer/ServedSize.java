@@ -20,12 +20,6 @@ public final class ServedSize {
     public static final int AREA_BYTES = 365;
     /** What a corner of a shape takes: {@code {"x":-12345,"z":-12345},}. */
     public static final int CORNER_BYTES = 21;
-    /**
-     * The most one cell of one biome can add to the biome's areas: a union of squares has at most
-     * four corners per square and at most one area per square.
-     */
-    public static final long CELL_UPPER_BOUND_BYTES = AREA_BYTES + 4L * CORNER_BYTES;
-
     private ServedSize() {
     }
 

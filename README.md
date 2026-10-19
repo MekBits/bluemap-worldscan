@@ -52,10 +52,9 @@ Release 1.1.0 reads the layers that 1.0.0 stored, and replaces them after its fi
 
 **Upgrading from 1.0.0.** Release 1.0.0 wrote its whole default settings into the `config.json` it
 created, so that file holds `"cellSizeChunks": 4`. Release 1.1.0 keeps the value from the file, and
-4 chunks per cell is a lot of corners on a large overworld: the measured one would take about 18 MB
-in `live/markers.json`, and the addon skips the biome layers of a world that big (see
-[Biomes](#biomes)). After upgrading, set `biomes.cellSizeChunks` to 16, or delete the `biomes` block
-from the file to get the default.
+4 chunks per cell is a lot of corners on a large overworld: the measured one takes about 18 MB in
+`live/markers.json`. After upgrading, set `biomes.cellSizeChunks` to 16, or delete the `biomes`
+block from the file to get the default.
 
 1. On an instance that must not scan, create the config first. Put
    `<bluemap config>/bluemap-worldscan/config.json` in place with this content:
@@ -212,12 +211,14 @@ name (a datapack's, or one newer than the client jar) is named from its id, as "
   where there are any.
 - A world gets layers for at most 512 biomes (vanilla has about 65). Above that the first 512 by id
   get one, and a warning says how many were left out. Biomes in `biomes.disabled` do not count.
-- Before the areas are worked out, the addon counts the cells of each biome. If the cells could
-  take more than 100,000,000 bytes of markers, at 449 bytes for each cell (an area of 365 bytes and
-  four corners of 21, which is the most one cell adds), that is more than 222,717 biome and cell
-  pairs, the world gets no biome layers and a warning names `biomes.cellSizeChunks`. The measured
-  overworld is over that limit at 8 chunks per cell and under it at 12. The structure layers are
-  not affected.
+- Two limits protect the game server's memory and the browser. The addon holds one entry for every
+  biome and cell pair before it joins the cells, and builds no biome layers for a world with more
+  than 2,000,000 pairs (about 144 MB of heap, 72 bytes a pair). After the areas are worked out, it
+  estimates their size in `live/markers.json` (365 bytes an area and 21 a corner), and builds no
+  biome layers for a world whose areas come to more than 100,000,000 bytes. In both cases a warning
+  names `biomes.cellSizeChunks`, and a larger cell fixes it. The structure layers are not affected.
+  The measured overworld has 6,301,195 pairs at 1 chunk per cell, which is over the first limit, and
+  1,890,859 at 2, 617,761 at 4 and 222,876 at 8, which are under it.
 - The biome layers outline every chunk whose biomes have been generated, at the resolution of the
   cell, also outside a map's render bounds or mask. With small cells that is close to the per-chunk
   biome data of the world, and it is shown to everyone who can open the map. `biomes.disabled` hides
@@ -281,8 +282,8 @@ In that world mineshafts alone were more than half of all structures (14,222 of 
 are why `mineshaft` is not built by default. `buried_treasure` is not built either, to keep the file
 smaller. If your world is large and the web app is slow to load, look at this number first.
 
-A biome area takes about 365 bytes and 21 bytes for each corner of its outline (fitted to the same
-overworld measured at five cell sizes, within 1 %). Every biome layer is in the file whether it is
+A biome area takes about 365 bytes and 21 bytes for each corner of its outline (fitted to the
+measurements below, within 1 %). Every biome layer is in the file whether it is
 shown or not.
 
 With the default settings that world gives a `live/markers.json` of 9,162,685 bytes: the default
@@ -291,11 +292,14 @@ same overworld, which has 55 biomes, at other cell sizes:
 
 | `biomes.cellSizeChunks` | Biome areas | Corners | Biomes in `live/markers.json` | Whole file |
 |---|---|---|---|---|
+| 2 | 23,037 | 680,728 | 22,871,227 bytes | 28,485,671 bytes |
+| 4 | 16,469 | 321,852 | 12,827,634 bytes | 18,442,078 bytes |
+| 8 | 10,241 | 150,996 | 6,937,932 bytes | 12,552,376 bytes |
 | 12 | 7,383 | 96,108 | 4,734,129 bytes | 10,348,573 bytes |
 | 16 (default) | 5,772 | 67,744 | 3,548,241 bytes | 9,162,685 bytes |
 | 32 | 2,968 | 30,798 | 1,746,280 bytes | 7,360,724 bytes |
 
-At 4 and 8 chunks per cell this world has more biome and cell pairs than the limit under
+At 1 chunk per cell this world has more biome and cell pairs than the limit under
 [Biomes](#biomes) allows, so it gets no biome layers there.
 
 With the biome layers off (`biomes.enabled` `false`) the file is the 5,614,445 bytes of the
@@ -334,8 +338,8 @@ standard error on every platform. Look for:
 - `stored generation G of the layers of map <id> (N markers)` when new layers were stored, or
   `the layers of map <id> are unchanged` when this instance stored these very layers before.
 - `built N biome layers of world <id> in S s` when the biome areas of a world were worked out.
-  A warning instead says that the biome layers of a world were skipped (too many cells), that a
-  world has more than 512 biomes, or that they could not be built; the structure layers are stored
+  A warning instead says that the biome layers of a world were skipped (too many cells, or too
+  large), that a world has more than 512 biomes, or that they could not be built; the structure layers are stored
   in every case.
 - `showing generation G of map <id> (N layers)` when an instance puts a stored generation on its
   map.
