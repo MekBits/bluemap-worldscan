@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.IntStream;
 
 import dk.mekbits.bluemapworldscan.chunk.ChunkInfo.Kind;
 import dk.mekbits.bluemapworldscan.testsupport.SyntheticChunks;
@@ -414,5 +415,30 @@ class ChunkReaderSyntheticTest {
 
         List<String> sorted = List.of("minecraft:buried_treasure", "minecraft:igloo", "minecraft:monument");
         assertEquals(List.of(sorted, sorted, sorted, sorted, sorted, sorted, sorted, sorted, sorted, sorted), reads);
+    }
+
+    private static List<String> palette(int size) {
+        return IntStream.range(0, size).mapToObj(n -> "pack:biome_" + n).toList();
+    }
+
+    @Test
+    void aSectionWithMoreThanSixtyFourBiomeNamesIsSkippedAndTheOtherSectionsAreKept_synthetic() throws IOException {
+        CompoundBinaryTag chunk = rootLayout(4903).putString("Status", "minecraft:full")
+                .put("sections", sections(palette(65), List.of("minecraft:plains")))
+                .build();
+
+        ChunkInfo info = read(chunk);
+
+        assertEquals(Set.of("minecraft:plains"), info.biomes());
+        assertEquals(Set.of(), info.unknownBiomeIds());
+    }
+
+    @Test
+    void aSectionWithSixtyFourBiomeNamesIsRead_synthetic() throws IOException {
+        CompoundBinaryTag chunk = rootLayout(4903).putString("Status", "minecraft:full")
+                .put("sections", sections(palette(64)))
+                .build();
+
+        assertEquals(64, read(chunk).biomes().size());
     }
 }

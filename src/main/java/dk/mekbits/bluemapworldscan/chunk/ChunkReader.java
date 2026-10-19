@@ -25,7 +25,8 @@ import org.jetbrains.annotations.Nullable;
  *
  * <p>A structure start or biome whose id is not a valid resource location is skipped, not the
  * whole chunk: an id ends up in the stored layers and in the log, so only what Minecraft accepts
- * as an id gets through.
+ * as an id gets through. A section whose biome palette has more than 64 names (a section holds
+ * 64 biome cells) is malformed in the same way: its biomes are skipped, the rest of the chunk is kept.
  */
 public final class ChunkReader {
 
@@ -36,6 +37,8 @@ public final class ChunkReader {
     private static final int FIRST_PALETTE_BIOMES_DATA_VERSION = 2832;
     private static final int NO_POSITION = Integer.MIN_VALUE;
     private static final int BOX_LENGTH = 6;
+    /** A section's biomes are 4x4x4 cells, so a palette of more than 64 names is not one the game writes. */
+    static final int MAX_BIOME_PALETTE = 64;
     /** The placeholder id old chunks store for every structure type that has no start in them. */
     private static final String INVALID_START = "INVALID";
     private static final String END_CITY_SHIP_TEMPLATE = "ship";
@@ -195,6 +198,9 @@ public final class ChunkReader {
             ListBinaryTag palette = sections.getCompound(i)
                     .getCompound("biomes", CompoundBinaryTag.empty())
                     .getList("palette", BinaryTagTypes.STRING, ListBinaryTag.empty());
+            if (palette.size() > MAX_BIOME_PALETTE) {
+                continue;
+            }
             for (int j = 0; j < palette.size(); j++) {
                 String name = palette.getString(j);
                 if (name.isBlank()) {
