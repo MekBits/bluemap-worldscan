@@ -247,14 +247,14 @@ to make the file smaller are to build fewer markers, with `structures.disabledLa
 `biomes.disabled`, to switch biome layers off with `biomes.enabled`, or to give the biome areas
 fewer corners with a larger `biomes.cellSizeChunks`.
 
-A marker takes about 500 bytes in `live/markers.json`, about 190 of them the popup. Measured on one
+A marker takes about 485 bytes in `live/markers.json`, about 175 of them the popup. Measured on one
 large overworld (3,617,924 chunks, 4,262 region files), structure layers only:
 
 | Layers | Markers | `live/markers.json` |
 |---|---|---|
-| Defaults (`mineshaft` and `buried_treasure` not built) | 11,577 | 5,799,677 bytes |
-| Only `mineshaft` not built | 12,543 | 6,294,603 bytes |
-| Every layer | 26,765 | 13,332,708 bytes |
+| Defaults (`mineshaft` and `buried_treasure` not built) | 11,577 | 5,614,445 bytes |
+| Only `mineshaft` not built | 12,543 | 6,093,915 bytes |
+| Every layer | 26,765 | 12,904,468 bytes |
 
 In that world mineshafts alone were more than half of all structures (14,222 of 26,765), and they
 are why `mineshaft` is not built by default. `buried_treasure` is not built either, to keep the file
@@ -263,19 +263,19 @@ smaller. If your world is large and the web app is slow to load, look at this nu
 A biome area takes about 330 bytes and 23 bytes for each corner of its outline. Every biome layer
 is in the file whether it is shown or not.
 
-With the default settings that world gives a `live/markers.json` of 9,347,917 bytes: the default
-structure layers (5,799,677 bytes) and the biome layers at 16 chunks per cell (3,548,241 bytes). The
+With the default settings that world gives a `live/markers.json` of 9,162,685 bytes: the default
+structure layers (5,614,445 bytes) and the biome layers at 16 chunks per cell (3,548,241 bytes). The
 same overworld, which has 55 biomes, at other cell sizes:
 
 | `biomes.cellSizeChunks` | Biome areas | Corners | Biomes in `live/markers.json` | Whole file |
 |---|---|---|---|---|
-| 4 | 16,469 | 321,852 | 12,827,634 bytes | 18,627,310 bytes |
-| 8 | 10,241 | 150,996 | 6,937,932 bytes | 12,737,608 bytes |
-| 12 | 7,383 | 96,108 | 4,734,129 bytes | 10,533,805 bytes |
-| 16 (default) | 5,772 | 67,744 | 3,548,241 bytes | 9,347,917 bytes |
-| 32 | 2,968 | 30,798 | 1,746,280 bytes | 7,545,956 bytes |
+| 4 | 16,469 | 321,852 | 12,827,634 bytes | 18,442,078 bytes |
+| 8 | 10,241 | 150,996 | 6,937,932 bytes | 12,552,376 bytes |
+| 12 | 7,383 | 96,108 | 4,734,129 bytes | 10,348,573 bytes |
+| 16 (default) | 5,772 | 67,744 | 3,548,241 bytes | 9,162,685 bytes |
+| 32 | 2,968 | 30,798 | 1,746,280 bytes | 7,360,724 bytes |
 
-With the biome layers off (`biomes.enabled` `false`) the file is the 5,799,677 bytes of the
+With the biome layers off (`biomes.enabled` `false`) the file is the 5,614,445 bytes of the
 structures.
 
 When the markers of a map are estimated at more than 8 MiB in `live/markers.json`, the scanner logs
