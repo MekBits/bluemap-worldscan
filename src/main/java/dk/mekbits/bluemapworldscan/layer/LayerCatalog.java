@@ -84,11 +84,7 @@ public final class LayerCatalog {
     }
 
     private static Layer unknown(String namespace, String path) {
-        String words = path.replace('_', ' ').replace('/', ' ').strip();
-        String label = words.isEmpty() ? path : words.substring(0, 1).toUpperCase(Locale.ROOT) + words.substring(1);
-        if (!namespace.equals(MINECRAFT)) {
-            label += " (" + namespace + ")";
-        }
+        String label = IdLabels.fromId(namespace + ":" + path);
         String id = (namespace + "_" + path).toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9_.-]", "_");
         return new Layer(id, label, false, null, WIDE);
     }

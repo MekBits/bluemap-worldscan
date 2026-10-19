@@ -27,7 +27,7 @@ class MapLayersTest {
                 .map(id -> new LayerSet(id, id, false, 0,
                         List.of(new Poi("1_70_1", id, 1, 70, 1, "d", null, 11, 11, 5000))))
                 .toList();
-        LayerStore.write(map.storage(), new LayersFile(1, sets), new Manifest(1, generation, "scanner-1", "1.0.0", "sha"));
+        LayerStore.write(map.storage(), new LayersFile(LayersFile.FORMAT_VERSION, sets), new Manifest(1, generation, "scanner-1", "1.1.0", "sha"));
     }
 
     @Test

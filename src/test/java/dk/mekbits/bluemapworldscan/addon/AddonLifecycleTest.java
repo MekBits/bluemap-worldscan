@@ -25,10 +25,13 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.zip.GZIPOutputStream;
 
+import de.bluecolored.bluemap.api.markers.MarkerSet;
 import de.bluecolored.bluemap.api.markers.POIMarker;
+import de.bluecolored.bluemap.api.markers.ShapeMarker;
 import dk.mekbits.bluemapworldscan.bluemap.LayerStore;
 import dk.mekbits.bluemapworldscan.bluemap.Manifest;
 import dk.mekbits.bluemapworldscan.config.AddonFolder;
+import dk.mekbits.bluemapworldscan.layer.LayersFile;
 import dk.mekbits.bluemapworldscan.icon.ClientAssetIcons;
 import dk.mekbits.bluemapworldscan.testsupport.Await;
 import dk.mekbits.bluemapworldscan.testsupport.FakeBlueMap;
@@ -49,6 +52,7 @@ class AddonLifecycleTest {
 
     private static final String MONUMENT_SET = "worldscan-structure-monument";
     private static final String VILLAGE_SET = "worldscan-structure-village";
+    private static final String PLAINS_SET = "worldscan-biome-minecraft-plains";
     private static final String LAYERS_ASSET = "bluemap-worldscan-layers.json.gz";
     private static final String MANIFEST_ASSET = "bluemap-worldscan-manifest.json";
 
@@ -296,11 +300,80 @@ class AddonLifecycleTest {
     }
 
     @Test
+    void aScanningInstanceStoresAndShowsAHiddenSetPerBiomeAsShapes() throws IOException {
+        InMemoryBlueMapMap map = new InMemoryBlueMapMap("overworld");
+
+        lifecycle(addonFolder("addon", null)).onEnable(api(true, TestWorlds.withChunks(temp.resolve("world"), 40), map));
+
+        Await.until("the biome layer", () -> has(map, PLAINS_SET));
+        MarkerSet plains = map.getMarkerSets().get(PLAINS_SET);
+        assertEquals("Biome: Plains", plains.getLabel(), "named from the id without a client jar");
+        assertTrue(plains.isDefaultHidden());
+        assertTrue(plains.isToggleable());
+        ShapeMarker area = (ShapeMarker) plains.getMarkers().values().iterator().next();
+        assertFalse(area.isDepthTestEnabled());
+        assertEquals(1, plains.getMarkers().size());
+        assertEquals(LayersFile.FORMAT_VERSION, assertOk(LayerStore.readLayers(map.storage())).formatVersion());
+        assertTrue(has(map, VILLAGE_SET), "the structure layers are there as before");
+    }
+
+    @Test
+    void biomeLayersAreNotBuiltWhenTheyAreSwitchedOff() throws IOException {
+        InMemoryBlueMapMap map = new InMemoryBlueMapMap("overworld");
+        AddonLifecycle lifecycle = lifecycle(addonFolder("addon", "{\"biomes\": {\"enabled\": false}}"));
+        FakeBlueMap commandLine = api(false, TestWorlds.withChunks(temp.resolve("world"), 40), map);
+
+        lifecycle.onEnable(commandLine);
+        lifecycle.onDisable(commandLine);
+
+        assertTrue(has(map, VILLAGE_SET));
+        assertFalse(has(map, PLAINS_SET));
+    }
+
+    @Test
+    void layersStoredByRelease100AreShownByAnInstanceThatDoesNotScan() throws IOException {
+        InMemoryAssetStorage shared = new InMemoryAssetStorage("overworld");
+        storeRelease100Layers(shared);
+        InMemoryBlueMapMap map = new InMemoryBlueMapMap("overworld", shared);
+
+        lifecycle(addonFolder("addon", "{\"scan\": false}")).onEnable(api(true, temp.resolve("no-world"), map));
+
+        Await.until("the layers of release 1.0.0", () -> has(map, "worldscan-structure-igloo"));
+        assertTrue(map.getMarkerSets().get("worldscan-structure-igloo").isDefaultHidden());
+    }
+
+    @Test
+    void aScannerReplacesTheLayersOfRelease100WithFormatVersionTwo() throws IOException {
+        InMemoryAssetStorage shared = new InMemoryAssetStorage("overworld");
+        storeRelease100Layers(shared);
+        InMemoryBlueMapMap map = new InMemoryBlueMapMap("overworld", shared);
+        AddonLifecycle lifecycle = lifecycle(addonFolder("addon", null));
+        FakeBlueMap commandLine = api(false, TestWorlds.withMonument(temp.resolve("world")), map);
+
+        lifecycle.onEnable(commandLine);
+        lifecycle.onDisable(commandLine);
+
+        assertEquals(LayersFile.FORMAT_VERSION, assertOk(LayerStore.readLayers(shared)).formatVersion());
+        assertTrue(assertOk(LayerStore.readManifest(shared)).generation() > 5);
+        assertTrue(has(map, MONUMENT_SET));
+        assertFalse(has(map, "worldscan-structure-igloo"), "a layer the new scan does not have goes away");
+    }
+
+    /** The files release 1.0.0 stores: format version 1, sets without an "areas" key. */
+    private static void storeRelease100Layers(InMemoryAssetStorage storage) throws IOException {
+        storage.put(LAYERS_ASSET, gzip("{\"formatVersion\":1,\"sets\":[{\"id\":\"worldscan-structure-igloo\",\"label\":\"Igloo\","
+                + "\"defaultHidden\":true,\"sorting\":0,\"pois\":[{\"id\":\"9_60_9\",\"label\":\"Igloo\",\"x\":9,\"y\":60,\"z\":9,"
+                + "\"detail\":\"x\",\"anchorX\":11,\"anchorY\":11,\"maxDistance\":5000.0}]}]}"));
+        storage.put(MANIFEST_ASSET, ("{\"formatVersion\":1,\"generation\":5,\"scannerId\":\"release-1.0.0\",\"addonVersion\":\"1.0.0\","
+                + "\"layersSha1\":\"x\"}").getBytes(StandardCharsets.UTF_8));
+    }
+
+    @Test
     void layersStoredByANewerAddonAreKeptAndTheScannerSaysSo() throws IOException {
         InMemoryAssetStorage shared = new InMemoryAssetStorage("overworld");
         byte[] manifest = "{\"formatVersion\":2,\"generation\":5,\"scannerId\":\"s\",\"addonVersion\":\"2.0.0\",\"layersSha1\":\"x\"}"
                 .getBytes(StandardCharsets.UTF_8);
-        byte[] layers = gzip("{\"formatVersion\":2,\"sets\":[]}");
+        byte[] layers = gzip("{\"formatVersion\":3,\"sets\":[]}");
         shared.put(MANIFEST_ASSET, manifest);
         shared.put(LAYERS_ASSET, layers);
         FakeBlueMap commandLine = api(false, TestWorlds.withMonument(temp.resolve("world")), new InMemoryBlueMapMap("overworld", shared));

@@ -6,6 +6,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
+import java.util.function.IntPredicate;
 import java.util.function.ToIntFunction;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
@@ -52,16 +53,21 @@ public final class LayerStore {
      * @return {@code Missing} without one; {@code Failed} when it cannot be read or parsed or is of a format this version does not know
      */
     public static Loaded<Manifest> readManifest(AssetStorage storage) {
-        return read(storage, MANIFEST_ASSET, false, Manifest.class, Manifest.FORMAT_VERSION, Manifest::formatVersion);
-    }
-
-    /** Reads the layers; the results are those of {@link #readManifest}. */
-    public static Loaded<LayersFile> readLayers(AssetStorage storage) {
-        return read(storage, LAYERS_ASSET, true, LayersFile.class, LayersFile.FORMAT_VERSION, LayersFile::formatVersion);
+        return read(storage, MANIFEST_ASSET, false, Manifest.class, Manifest::formatVersion,
+                version -> version == Manifest.FORMAT_VERSION, "version " + Manifest.FORMAT_VERSION);
     }
 
     /**
-     * Whether the storage holds a manifest or layers of a format newer than this addon writes. A
+     * Reads the layers; the results are those of {@link #readManifest}. Layers of the format of
+     * release 1.0.0 are read too: they hold structure sets only.
+     */
+    public static Loaded<LayersFile> readLayers(AssetStorage storage) {
+        return read(storage, LAYERS_ASSET, true, LayersFile.class, LayersFile::formatVersion, LayersFile::isReadable,
+                "versions " + LayersFile.OLDEST_READABLE_FORMAT_VERSION + " to " + LayersFile.FORMAT_VERSION);
+    }
+
+    /**
+     * Whether the storage holds a manifest or layers of a format newer than this addon reads. A
      * scanner must not replace those: the instances that run the newer addon would lose their layers.
      */
     public static boolean holdsNewerFormat(AssetStorage storage) {
@@ -75,12 +81,12 @@ public final class LayerStore {
     }
 
     private static <T> Loaded<T> read(
-            AssetStorage storage, String asset, boolean gzip, Class<T> type, int knownVersion,
-            ToIntFunction<T> versionOf) {
+            AssetStorage storage, String asset, boolean gzip, Class<T> type, ToIntFunction<T> versionOf,
+            IntPredicate readable, String readableVersions) {
         Loaded<T> parsed = parse(storage, asset, gzip, type);
-        if (parsed instanceof Loaded.Ok<T>(T value) && versionOf.applyAsInt(value) != knownVersion) {
+        if (parsed instanceof Loaded.Ok<T>(T value) && !readable.test(versionOf.applyAsInt(value))) {
             return new Loaded.Failed<>(asset + " has format version " + versionOf.applyAsInt(value)
-                    + ", this addon reads version " + knownVersion + ": update bluemap-worldscan on this instance");
+                    + ", this addon reads " + readableVersions + ": update bluemap-worldscan on this instance");
         }
         return parsed;
     }
