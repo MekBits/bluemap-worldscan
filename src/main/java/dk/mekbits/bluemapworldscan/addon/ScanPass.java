@@ -2,10 +2,14 @@ package dk.mekbits.bluemapworldscan.addon;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.concurrent.TimeUnit;
 
 import de.bluecolored.bluemap.api.BlueMapWorld;
+import dk.mekbits.bluemapworldscan.biome.BiomeNames;
 import dk.mekbits.bluemapworldscan.bluemap.LayerBuilder;
 import dk.mekbits.bluemapworldscan.bluemap.LayerStore;
 import dk.mekbits.bluemapworldscan.bluemap.Manifest;
@@ -15,6 +19,8 @@ import dk.mekbits.bluemapworldscan.config.AddonFolder;
 import dk.mekbits.bluemapworldscan.icon.ClientAssetIcons;
 import dk.mekbits.bluemapworldscan.icon.IconAssets;
 import dk.mekbits.bluemapworldscan.layer.LayersFile;
+import dk.mekbits.bluemapworldscan.layer.LayersFile.LayerSet;
+import dk.mekbits.bluemapworldscan.layer.ServedSize;
 import dk.mekbits.bluemapworldscan.scan.CancellationToken;
 import dk.mekbits.bluemapworldscan.scan.ScanLimits;
 import dk.mekbits.bluemapworldscan.scan.ScanOutcome;
@@ -33,17 +39,28 @@ import dk.mekbits.bluemapworldscan.util.Sha1;
  */
 final class ScanPass {
 
-    private static final int LAYERS_WARNING_BYTES = 8 << 20;
-
     private final Path addonFolder;
     private final AddonConfig config;
     private final String scannerId;
     private final String addonVersion;
     private final ClientAssetIcons icons;
     private final CancellationToken cancel;
+    private final BiomeBuilder biomeBuilder;
+
+    /** Builds the biome sets of a world; tests replace it. */
+    @FunctionalInterface
+    interface BiomeBuilder {
+        List<LayerSet> build(ScanState state, AddonConfig config, BiomeNames names);
+    }
 
     ScanPass(Path addonFolder, AddonConfig config, String scannerId, String addonVersion, ClientAssetIcons icons,
             CancellationToken cancel) {
+        this(addonFolder, config, scannerId, addonVersion, icons, cancel, LayerBuilder::buildBiomes);
+    }
+
+    ScanPass(Path addonFolder, AddonConfig config, String scannerId, String addonVersion, ClientAssetIcons icons,
+            CancellationToken cancel, BiomeBuilder biomeBuilder) {
+        this.biomeBuilder = biomeBuilder;
         this.addonFolder = addonFolder;
         this.config = config;
         this.scannerId = scannerId;
@@ -79,8 +96,7 @@ final class ScanPass {
         if (outcome.cancelled()) {
             return false;
         }
-        publishLayers(world, outcome.state());
-        return true;
+        return publishLayers(world, outcome.state());
     }
 
     /** Deprecated in the API, but still how an addon finds the dimension folder of a world. */
@@ -119,18 +135,44 @@ final class ScanPass {
         }
     }
 
-    private void publishLayers(CapturedWorld world, ScanState state) {
+    /** @return false when the scan was cancelled before every map was done */
+    private boolean publishLayers(CapturedWorld world, ScanState state) {
         Map<String, byte[]> pngByLayer = icons.pngByLayer();
+        // The biome sets hold no icon URLs, so they are the same on every map of the world.
+        List<LayerSet> biomeSets = buildBiomes(world, state);
         for (MapLayers map : world.maps()) {
+            // A reload or stop during the build must not write layers after the addon is disabled.
+            if (cancel.isCancelled()) {
+                return false;
+            }
             try {
-                publishMap(map, state, pngByLayer);
+                publishMap(map, state, pngByLayer, biomeSets);
             } catch (IOException | RuntimeException e) {
                 Log.warn("cannot store the layers of map " + map.map().getId(), e);
             }
         }
+        return !cancel.isCancelled();
     }
 
-    private void publishMap(MapLayers map, ScanState state, Map<String, byte[]> pngByLayer) throws IOException {
+    private List<LayerSet> buildBiomes(CapturedWorld world, ScanState state) {
+        if (!config.biomes().enabled()) {
+            return List.of();
+        }
+        long start = System.nanoTime();
+        try {
+            List<LayerSet> sets = biomeBuilder.build(state, config, BiomeNames.fromClientJar(icons.clientJar().orElse(null)));
+            Log.info("built " + sets.size() + " biome layers of world " + world.id() + " in "
+                    + TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - start) + " s");
+            return sets;
+        } catch (RuntimeException e) {
+            // The structure layers and the other worlds do not depend on the biomes.
+            Log.warn("cannot build the biome layers of world " + world.id() + "; its structure layers are stored without them", e);
+            return List.of();
+        }
+    }
+
+    private void publishMap(
+            MapLayers map, ScanState state, Map<String, byte[]> pngByLayer, List<LayerSet> biomeSets) throws IOException {
         String mapId = map.map().getId();
         if (LayerStore.holdsNewerFormat(map.storage())) {
             Log.warn("the layers of map " + mapId + " were stored by a newer bluemap-worldscan; update this instance. "
@@ -139,10 +181,12 @@ final class ScanPass {
         }
         // The icon URLs name the map, so each map gets its own layers file.
         Map<String, String> iconUrls = IconAssets.writeAll(map.storage(), pngByLayer);
-        LayersFile layers = new LayersFile(LayersFile.FORMAT_VERSION, LayerBuilder.buildStructures(state, config, iconUrls));
+        LayersFile layers = new LayersFile(LayersFile.FORMAT_VERSION,
+                LayerBuilder.combine(LayerBuilder.buildStructures(state, config, iconUrls), biomeSets));
         byte[] json = LayerStore.toJson(layers);
-        if (json.length > LAYERS_WARNING_BYTES) {
-            Log.warn(oversizedLayersMessage(mapId, json.length));
+        long servedBytes = estimatedServedBytes(layers);
+        if (oversized(servedBytes)) {
+            Log.warn(oversizedLayersMessage(mapId, servedBytes));
         }
 
         String sha1 = Sha1.hex(json);
@@ -162,12 +206,21 @@ final class ScanPass {
         map.refreshIfNewer();
     }
 
-    static String oversizedLayersMessage(String mapId, int jsonBytes) {
-        return "the layers of map " + mapId + " are " + (jsonBytes >> 20) + " MB of JSON, which every browser loads; "
-                + "make them smaller with structures.disabledLayers";
+    static long estimatedServedBytes(LayersFile layers) {
+        return ServedSize.estimate(layers);
+    }
+
+    static boolean oversized(long servedBytes) {
+        return servedBytes > ServedSize.WARNING_BYTES;
+    }
+
+    static String oversizedLayersMessage(String mapId, long servedBytes) {
+        return "the layers of map " + mapId + " are about " + String.format(Locale.ROOT, "%.1f", servedBytes / 1e6)
+                + " MB of markers, which every browser loads (the web app should load less than 10 MB); "
+                + "make them smaller with structures.disabledLayers, biomes.cellSizeChunks (a larger cell) or biomes.disabled";
     }
 
     private static int markerCount(LayersFile layers) {
-        return layers.sets().stream().mapToInt(set -> set.pois().size()).sum();
+        return layers.sets().stream().mapToInt(set -> set.pois().size() + set.areas().size()).sum();
     }
 }

@@ -42,11 +42,15 @@ public record AddonConfig(
 
     /**
      * @param enabled whether biome layers are built
-     * @param cellSizeChunks the resolution of the biome areas, in chunks per cell side
+     * @param cellSizeChunks the resolution of the biome areas, in chunks per cell side, from 1 to
+     *     {@link #MAX_CELL_SIZE_CHUNKS}
      * @param disabled ids of the biomes that are not built
      */
     public record Biomes(boolean enabled, int cellSizeChunks, List<String> disabled) {
     }
+
+    /** The world border, 30,000,000 blocks, in chunks: a larger cell is no coarser than one cell for the whole world. */
+    public static final int MAX_CELL_SIZE_CHUNKS = 1_875_000;
 
     static final String FILE_NAME = "config.json";
 
@@ -59,8 +63,9 @@ public record AddonConfig(
         if (refreshMinutes < 0) {
             throw new IllegalArgumentException("refreshMinutes must not be negative: " + refreshMinutes);
         }
-        if (biomes.cellSizeChunks() < 1) {
-            throw new IllegalArgumentException("biomes.cellSizeChunks must be at least 1: " + biomes.cellSizeChunks());
+        if (biomes.cellSizeChunks() < 1 || biomes.cellSizeChunks() > MAX_CELL_SIZE_CHUNKS) {
+            throw new IllegalArgumentException("biomes.cellSizeChunks must be from 1 to " + MAX_CELL_SIZE_CHUNKS
+                    + ": " + biomes.cellSizeChunks());
         }
         structures = new Structures(List.copyOf(structures.disabledLayers()));
         biomes = new Biomes(biomes.enabled(), biomes.cellSizeChunks(), List.copyOf(biomes.disabled()));
@@ -68,7 +73,7 @@ public record AddonConfig(
 
     /** The settings of a folder without a config file. */
     public static AddonConfig defaults() {
-        return new AddonConfig(true, 500, 5, new Structures(List.of("mineshaft", "buried_treasure")), new Biomes(true, 4, List.of()));
+        return new AddonConfig(true, 500, 5, new Structures(List.of("mineshaft", "buried_treasure")), new Biomes(true, 16, List.of()));
     }
 
     /**

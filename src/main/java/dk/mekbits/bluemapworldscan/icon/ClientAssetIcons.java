@@ -27,18 +27,27 @@ import dk.mekbits.bluemapworldscan.util.Log;
  */
 public final class ClientAssetIcons {
 
-    private final Supplier<Optional<Path>> clientJar;
+    private final Supplier<Optional<Path>> clientJarSource;
+    private Optional<Path> clientJar;
     private Map<String, byte[]> pngByLayer;
 
     /** @param clientJar finds the client jar, slowly if it has to be downloaded ({@link ClientJar#ensure()}) */
     public ClientAssetIcons(Supplier<Optional<Path>> clientJar) {
-        this.clientJar = clientJar;
+        this.clientJarSource = clientJar;
+    }
+
+    /** The client jar, looked for once per JVM; the biome names are read from it as well. */
+    public synchronized Optional<Path> clientJar() {
+        if (clientJar == null) {
+            clientJar = clientJarSource.get();
+        }
+        return clientJar;
     }
 
     /** The PNG of each icon by layer id; layers whose texture is not available are left out. */
     public synchronized Map<String, byte[]> pngByLayer() {
         if (pngByLayer == null) {
-            pngByLayer = clientJar.get().map(ClientAssetIcons::composeOrNone).orElse(Map.of());
+            pngByLayer = clientJar().map(ClientAssetIcons::composeOrNone).orElse(Map.of());
         }
         return pngByLayer;
     }

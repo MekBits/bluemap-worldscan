@@ -32,7 +32,7 @@ class AddonConfigTest {
         assertEquals(5, config.refreshMinutes());
         assertEquals(List.of("mineshaft", "buried_treasure"), config.structures().disabledLayers());
         assertTrue(config.biomes().enabled());
-        assertEquals(4, config.biomes().cellSizeChunks());
+        assertEquals(16, config.biomes().cellSizeChunks());
         assertEquals(List.of(), config.biomes().disabled());
         assertEquals(config, AddonConfig.loadOrCreate(folder), "the written file reads back as the same settings");
         assertTrue(Files.readString(folder.resolve("config.json")).contains("\"disabledLayers\""));
@@ -95,5 +95,25 @@ class AddonConfigTest {
         write("[1, 2]");
 
         assertFalse(AddonConfig.loadOrCreate(folder).scan());
+    }
+
+    @Test
+    void aCellSizeAsWideAsTheWorldBorderIsAccepted() throws IOException {
+        write("{\"biomes\": {\"cellSizeChunks\": 1875000}}");
+
+        AddonConfig config = AddonConfig.loadOrCreate(folder);
+
+        assertTrue(config.scan());
+        assertEquals(1_875_000, config.biomes().cellSizeChunks());
+    }
+
+    @Test
+    void aCellSizeWiderThanTheWorldBorderGivesTheDefaultsWithScanOff() throws IOException {
+        write("{\"biomes\": {\"cellSizeChunks\": 1875001}}");
+
+        AddonConfig config = AddonConfig.loadOrCreate(folder);
+
+        assertFalse(config.scan());
+        assertEquals(AddonConfig.defaults().biomes(), config.biomes());
     }
 }

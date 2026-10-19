@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -29,6 +30,7 @@ import java.util.zip.GZIPInputStream;
 
 import de.bluecolored.bluemap.api.gson.MarkerGson;
 import de.bluecolored.bluemap.api.markers.MarkerSet;
+import dk.mekbits.bluemapworldscan.biome.BiomeNames;
 import dk.mekbits.bluemapworldscan.bluemap.LayerBuilder;
 import dk.mekbits.bluemapworldscan.bluemap.LayerPublisher;
 import dk.mekbits.bluemapworldscan.bluemap.LayerStore;
@@ -37,6 +39,7 @@ import dk.mekbits.bluemapworldscan.icon.IconAssets;
 import dk.mekbits.bluemapworldscan.layer.Layer;
 import dk.mekbits.bluemapworldscan.layer.LayerCatalog;
 import dk.mekbits.bluemapworldscan.layer.LayersFile;
+import dk.mekbits.bluemapworldscan.layer.LayersFile.LayerSet;
 import dk.mekbits.bluemapworldscan.scan.CancellationToken;
 import dk.mekbits.bluemapworldscan.scan.ScanLimits;
 import dk.mekbits.bluemapworldscan.scan.ScanOutcome;
@@ -44,6 +47,7 @@ import dk.mekbits.bluemapworldscan.scan.WorldScanner;
 import dk.mekbits.bluemapworldscan.state.RegionEntry;
 import dk.mekbits.bluemapworldscan.state.ScanState;
 import dk.mekbits.bluemapworldscan.state.StateStore;
+import dk.mekbits.bluemapworldscan.util.Loaded;
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
 
@@ -55,11 +59,16 @@ import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
  * on an in-memory map and prints the size of what BlueMap would serve: the API's own
  * {@code MarkerGson} applied to the map's marker sets, as BlueMap's {@code LiveMarkersDataSupplier} does.
  *
- * <p>Usage: {@code MeasureFromBackup <backup.tar.gz> <overworld|the_nether|the_end> <map id> [state output file]}.
- * Icon URLs have the form and length of real ones. Run through the Gradle task {@code measureBackup}.
+ * <p>Usage: {@code MeasureFromBackup <backup.tar.gz | -> <overworld|the_nether|the_end> <map id> [options]}.
+ * Options: {@code --state-out <file>} keeps the scan state, {@code --state-in <file>} measures a kept
+ * state instead of scanning the backup (give {@code -} as the backup), {@code --client-jar <file>}
+ * names the biomes from a client jar, and {@code --cell-sizes 8,16} measures the biome layers at
+ * more cell sizes (in chunks) from the same scan. Icon URLs have the form and length of real ones.
+ * Run through the Gradle task {@code measureBackup}.
  */
 public final class MeasureFromBackup {
 
+    private static final String WORLD_ID = "measure";
     private static final long NO_RATE_LIMIT = 1_000_000_000L;
     private static final int PROGRESS_EVERY_REGIONS = 250;
     // Held in a field: the log manager only keeps a weak reference, and a collected logger forgets its level.
@@ -69,33 +78,69 @@ public final class MeasureFromBackup {
     }
 
     public static void main(String[] args) throws Exception {
-        if (args.length < 3 || args.length > 4) {
-            throw new IllegalArgumentException("usage: MeasureFromBackup <backup.tar.gz> <overworld|the_nether|the_end> <map id> [state output file]");
+        if (args.length < 3) {
+            throw new IllegalArgumentException("usage: MeasureFromBackup <backup.tar.gz | -> <overworld|the_nether|the_end> <map id> "
+                    + "[--state-out F] [--state-in F] [--client-jar F] [--cell-sizes 8,16]");
         }
         Path backup = Path.of(args[0]);
         String dimension = args[1];
         String mapId = args[2];
+        Path stateOut = null;
+        Path stateIn = null;
+        Path clientJar = null;
+        List<Integer> cellSizes = List.of();
+        for (int i = 3; i < args.length; i += 2) {
+            if (i + 1 >= args.length) {
+                throw new IllegalArgumentException("option without a value: " + args[i]);
+            }
+            switch (args[i]) {
+                case "--state-out" -> stateOut = Path.of(args[i + 1]);
+                case "--state-in" -> stateIn = Path.of(args[i + 1]);
+                case "--client-jar" -> clientJar = Path.of(args[i + 1]);
+                case "--cell-sizes" -> cellSizes = Arrays.stream(args[i + 1].split(",")).map(String::strip).map(Integer::valueOf).toList();
+                default -> throw new IllegalArgumentException("unknown option " + args[i]);
+            }
+        }
         // One INFO line per region would be thousands of lines.
         ADDON_LOGGER.setLevel(Level.WARNING);
 
-        long start = System.nanoTime();
-        ScanState state = scanBackup(backup, dimension);
-        System.out.printf("scanned in %d s%n", TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - start));
-        if (args.length == 4) {
-            StateStore.save(state, Path.of(args[3]));
-            System.out.println("scan state saved to " + args[3]);
+        ScanState state;
+        if (stateIn != null) {
+            state = switch (StateStore.load(stateIn, WORLD_ID)) {
+                case Loaded.Ok<ScanState> ok -> ok.value();
+                default -> throw new IllegalArgumentException("cannot read the scan state " + stateIn);
+            };
+            System.out.println("scan state read from " + stateIn);
+        } else {
+            long start = System.nanoTime();
+            state = scanBackup(backup, dimension);
+            System.out.printf("scanned in %d s%n", TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - start));
+        }
+        if (stateOut != null) {
+            StateStore.save(state, stateOut);
+            System.out.println("scan state saved to " + stateOut);
         }
 
+        BiomeNames names = BiomeNames.fromClientJar(clientJar);
         AddonConfig defaults = AddonConfig.defaults();
-        measure(state, defaults, mapId);
-        measure(state, withDisabled(defaults, "mineshaft"), mapId);
-        measure(state, withDisabled(defaults), mapId);
+        measure(state, defaults, names, mapId, true);
+        measure(state, withDisabled(defaults, "mineshaft"), names, mapId, false);
+        measure(state, withDisabled(defaults), names, mapId, false);
+        for (int cellSize : cellSizes) {
+            measure(state, withCellSize(defaults, cellSize), names, mapId, false);
+        }
     }
 
     private static AddonConfig withDisabled(AddonConfig base, String... layers) {
         return new AddonConfig(
                 base.scan(), base.maxChunksPerSecond(), base.refreshMinutes(),
                 new AddonConfig.Structures(List.of(layers)), base.biomes());
+    }
+
+    private static AddonConfig withCellSize(AddonConfig base, int cellSizeChunks) {
+        return new AddonConfig(
+                base.scan(), base.maxChunksPerSecond(), base.refreshMinutes(), base.structures(),
+                new AddonConfig.Biomes(base.biomes().enabled(), cellSizeChunks, base.biomes().disabled()));
     }
 
     private static ScanState scanBackup(Path backup, String dimension) throws IOException, InterruptedException {
@@ -144,14 +189,14 @@ public final class MeasureFromBackup {
             leftovers.sorted(Comparator.reverseOrder()).forEach(path -> path.toFile().delete());
         }
         System.out.printf("%d region files of %s: %s%n", regionNumber, dimension, totals);
-        return new ScanState(ScanState.FORMAT_VERSION, "measure", regions);
+        return new ScanState(ScanState.FORMAT_VERSION, WORLD_ID, regions);
     }
 
     private static void scanRegionFolder(
             Path regionFolder, String name, SortedMap<String, RegionEntry> regions, Totals totals) {
         Path dimensionFolder = regionFolder.getParent();
         try {
-            ScanState empty = new ScanState(ScanState.FORMAT_VERSION, "measure", new TreeMap<>());
+            ScanState empty = new ScanState(ScanState.FORMAT_VERSION, WORLD_ID, new TreeMap<>());
             ScanOutcome outcome = WorldScanner.scan(
                     dimensionFolder, empty, new ScanLimits((int) NO_RATE_LIMIT), new CancellationToken(), checkpoint -> {
                     });
@@ -168,25 +213,42 @@ public final class MeasureFromBackup {
         }
     }
 
-    private static void measure(ScanState state, AddonConfig config, String mapId) throws IOException {
+    private static void measure(ScanState state, AddonConfig config, BiomeNames names, String mapId, boolean perSet)
+            throws IOException {
         Map<String, String> iconUrls = new TreeMap<>();
         for (Layer layer : LayerCatalog.layers()) {
             byte[] stand = layer.id().getBytes(StandardCharsets.UTF_8);
             iconUrls.put(layer.id(), "maps/" + mapId + "/assets/" + IconAssets.assetName(layer.id(), stand));
         }
-        LayersFile layers = new LayersFile(LayersFile.FORMAT_VERSION, LayerBuilder.buildStructures(state, config, iconUrls));
+        long start = System.nanoTime();
+        List<LayerSet> biomeSets = LayerBuilder.buildBiomes(state, config, names);
+        long biomeSeconds = TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - start);
+        LayersFile layers = new LayersFile(LayersFile.FORMAT_VERSION,
+                LayerBuilder.combine(LayerBuilder.buildStructures(state, config, iconUrls), biomeSets));
         InMemoryBlueMapMap map = new InMemoryBlueMapMap(mapId);
         new LayerPublisher().publish(map, layers);
 
-        System.out.printf("%n== structures.disabledLayers %s%s%n", config.structures().disabledLayers(),
+        Map<String, MarkerSet> structures = new TreeMap<>();
+        Map<String, MarkerSet> biomes = new TreeMap<>();
+        map.getMarkerSets().forEach((id, set) -> (id.startsWith("worldscan-biome-") ? biomes : structures).put(id, set));
+        long corners = layers.sets().stream().flatMap(set -> set.areas().stream())
+                .mapToLong(area -> area.outline().size() + area.holes().stream().mapToLong(List::size).sum()).sum();
+
+        System.out.printf("%n== structures.disabledLayers %s, biomes %s%s%n", config.structures().disabledLayers(),
+                config.biomes().enabled() ? "on at " + config.biomes().cellSizeChunks() + " chunks per cell" : "off",
                 config.equals(AddonConfig.defaults()) ? " (the default)" : "");
         System.out.printf("stored layers JSON: %,d bytes%n", LayerStore.toJson(layers).length);
         System.out.printf("live/markers.json:  %,d bytes%n", servedBytes(map.getMarkerSets()));
+        System.out.printf("  structures: %,d bytes in %d sets; biomes: %,d bytes in %d sets (%,d areas, %,d corners, built in %d s)%n",
+                servedBytes(structures), structures.size(), servedBytes(biomes), biomes.size(),
+                layers.sets().stream().mapToLong(set -> set.areas().size()).sum(), corners, biomeSeconds);
         long markers = 0;
         for (Map.Entry<String, MarkerSet> set : new TreeMap<>(map.getMarkerSets()).entrySet()) {
             markers += set.getValue().getMarkers().size();
-            System.out.printf("  %-45s %,8d markers %,12d bytes%n",
-                    set.getKey(), set.getValue().getMarkers().size(), servedBytes(Map.of(set.getKey(), set.getValue())));
+            if (perSet) {
+                System.out.printf("  %-45s %,8d markers %,12d bytes%n",
+                        set.getKey(), set.getValue().getMarkers().size(), servedBytes(Map.of(set.getKey(), set.getValue())));
+            }
         }
         System.out.printf("  %d markers in %d sets%n", markers, map.getMarkerSets().size());
     }

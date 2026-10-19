@@ -208,6 +208,11 @@ public final class BiomeIds {
         return KNOWN.contains(id);
     }
 
+    /** The biomes of Minecraft 26.3. */
+    public static Set<String> knownIds() {
+        return KNOWN;
+    }
+
     private static String renamed(String id, int dataVersion) {
         String renamed = id;
         if (dataVersion < CAVES_AND_CLIFFS_RENAMES) {

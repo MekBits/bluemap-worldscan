@@ -30,6 +30,7 @@ dependencies {
 
     implementation("net.kyori:adventure-nbt:5.2.0")
     implementation("at.yawk.lz4:lz4-java:1.10.1")
+    implementation("org.locationtech.jts:jts-core:1.20.0")
     implementation("com.google.code.gson:gson:2.14.0")
 
     testImplementation("de.bluecolored:bluemap-api:2.8.2")
@@ -74,19 +75,25 @@ tasks.register<JavaExec>("reduceFixtures") {
 
 // Measures the live/markers.json size of a world backup without extracting it. Usage:
 // ./gradlew measureBackup -Pbackup=<world backup .tar.gz> -Pdimension=<overworld|the_nether|the_end> -PmapId=<map id>
-// (add -PstateOut=<file> to keep the scan state)
+// Optional: -PstateOut=<file> keeps the scan state; -PstateIn=<file> measures a kept state instead of
+// scanning (then -Pbackup is not needed); -PclientJar=<file> names the biomes; -PcellSizes=8,16 also
+// measures the biome layers at those cell sizes.
 tasks.register<JavaExec>("measureBackup") {
-    description = "Prints the size of the live/markers.json that the structure layers of a world backup give."
+    description = "Prints the size of the live/markers.json that the layers of a world backup give."
     group = "other"
     classpath = sourceSets.test.get().runtimeClasspath
     mainClass = "dk.mekbits.bluemapworldscan.testsupport.MeasureFromBackup"
-    maxHeapSize = "2g"
+    maxHeapSize = "6g"
     doFirst {
         fun required(name: String) = providers.gradleProperty(name).orNull
             ?: throw GradleException("pass -P$name=<value>")
-        args(listOfNotNull(
-            required("backup"), required("dimension"), required("mapId"),
-            providers.gradleProperty("stateOut").orNull))
+        fun option(flag: String, name: String) =
+            providers.gradleProperty(name).orNull?.let { listOf(flag, it) } ?: emptyList()
+        val stateIn = providers.gradleProperty("stateIn").orNull
+        args(
+            listOf(if (stateIn != null) "-" else required("backup"), required("dimension"), required("mapId"))
+                + option("--state-out", "stateOut") + option("--state-in", "stateIn")
+                + option("--client-jar", "clientJar") + option("--cell-sizes", "cellSizes"))
     }
 }
 
@@ -110,6 +117,7 @@ tasks.shadowJar {
     relocate("com.google.gson", "$libPackage.gson")
     relocate("net.kyori", "$libPackage.kyori")
     relocate("net.jpountz", "$libPackage.jpountz")
+    relocate("org.locationtech.jts", "$libPackage.jts")
 
     exclude("**/module-info.class")
     exclude("net/jpountz/util/*/*/liblz4-java.*")
