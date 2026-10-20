@@ -253,6 +253,8 @@ than 1000 blocks.
 ### Icons
 
 The icons come from the vanilla textures in the Minecraft client jar. No Mojang asset is bundled.
+Each texture is cropped to its picture, scaled up by a whole factor to at most 32 pixels and
+outlined in black and white, so the icon stands out on land and water when the map is zoomed out.
 The scanning instance downloads the client jar of the newest release from Mojang's version
 manifest, checks its SHA-1 and keeps it in `client-jar/`. It only follows https URLs under
 `mojang.com` and refuses a jar over 200 MB. It stores one small icon per layer in the asset

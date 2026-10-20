@@ -20,6 +20,7 @@ import dk.mekbits.bluemapworldscan.biome.BiomeColors;
 import dk.mekbits.bluemapworldscan.biome.BiomeNames;
 import dk.mekbits.bluemapworldscan.config.AddonConfig;
 import dk.mekbits.bluemapworldscan.icon.IconAssets;
+import dk.mekbits.bluemapworldscan.icon.IconComposer;
 import dk.mekbits.bluemapworldscan.layer.LayersFile;
 import dk.mekbits.bluemapworldscan.layer.LayersFile.Area;
 import dk.mekbits.bluemapworldscan.layer.LayersFile.LayerSet;
@@ -79,7 +80,7 @@ class LayerBuilderTest {
         Poi poi = village.pois().getFirst();
         assertEquals(new Poi(
                 "4_71_4", "Village", 4, 71, 4, MarkerData.popupHtml("Village", 4, 71, 4),
-                "maps/m/assets/village.png", 11, 11, 5000), poi);
+                "maps/m/assets/village.png", IconComposer.ICON_SIZE / 2, IconComposer.ICON_SIZE / 2, 5000), poi);
         assertTrue(poi.detail().contains("/tp @s 4 71 4"));
     }
 

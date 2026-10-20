@@ -61,14 +61,14 @@ class ClientAssetIconsTest {
     }
 
     @Test
-    void everyCatalogLayerGetsA22x22PngFromItsTexture() throws IOException {
+    void everyCatalogLayerGetsAnIconPngFromItsTexture() throws IOException {
         Map<String, byte[]> icons = ClientAssetIcons.compose(jar());
 
         assertEquals(LayerCatalog.layers().size(), icons.size());
         BufferedImage village = ImageIO.read(new ByteArrayInputStream(icons.get("village")));
         assertEquals(IconComposer.ICON_SIZE, village.getWidth());
         assertEquals(IconComposer.ICON_SIZE, village.getHeight());
-        assertEquals(RED, village.getRGB(11, 11));
+        assertEquals(RED, village.getRGB(IconComposer.ICON_SIZE / 2, IconComposer.ICON_SIZE / 2));
     }
 
     @Test
