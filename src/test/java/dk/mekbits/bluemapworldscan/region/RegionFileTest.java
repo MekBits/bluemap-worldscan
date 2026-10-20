@@ -17,10 +17,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.FileTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 import dk.mekbits.bluemapworldscan.testsupport.TestRegions;
 import dk.mekbits.bluemapworldscan.testsupport.TestRegions.TestChunk;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -43,6 +46,22 @@ class RegionFileTest {
         }
     }
 
+    private final List<RegionFile> opened = new ArrayList<>();
+
+    /** Opens a region file that is closed after the test, so the temporary folder can be deleted. */
+    private RegionFile open(Path file) throws IOException {
+        RegionFile region = RegionFile.open(file);
+        opened.add(region);
+        return region;
+    }
+
+    @AfterEach
+    void closeRegions() throws IOException {
+        for (RegionFile region : opened) {
+            region.close();
+        }
+    }
+
     private static byte[] read(InputStream in) throws IOException {
         try (in) {
             return in.readAllBytes();
@@ -54,7 +73,7 @@ class RegionFileTest {
         Path file = dir.resolve("r.0.0.mca");
         TestRegions.write(file, Map.of(5, new TestChunk(nbt, TIMESTAMP, 2, false)));
 
-        RegionFile region = RegionFile.open(file);
+        RegionFile region = open(file);
 
         assertTrue(region.present(5));
         assertEquals(TIMESTAMP, region.timestamp(5));
@@ -69,7 +88,7 @@ class RegionFileTest {
         Path file = dir.resolve("r.0.0.mca");
         TestRegions.write(file, Map.of(5, new TestChunk(nbt, TIMESTAMP, 1, false)));
 
-        RegionFile region = RegionFile.open(file);
+        RegionFile region = open(file);
 
         assertArrayEquals(nbt, read(region.openChunk(5)));
         assertNull(region.externalStamp(5));
@@ -80,7 +99,7 @@ class RegionFileTest {
         Path file = dir.resolve("r.0.0.mca");
         TestRegions.write(file, Map.of(5, new TestChunk(nbt, TIMESTAMP, 3, false)));
 
-        RegionFile region = RegionFile.open(file);
+        RegionFile region = open(file);
 
         assertArrayEquals(nbt, read(region.openChunk(5)));
         assertNull(region.externalStamp(5));
@@ -91,7 +110,7 @@ class RegionFileTest {
         Path file = dir.resolve("r.0.0.mca");
         TestRegions.write(file, Map.of(5, new TestChunk(nbt, TIMESTAMP, 4, false)));
 
-        RegionFile region = RegionFile.open(file);
+        RegionFile region = open(file);
 
         assertArrayEquals(nbt, read(region.openChunk(5)));
         assertNull(region.externalStamp(5));
@@ -105,7 +124,7 @@ class RegionFileTest {
         Path external = dir.resolve("c.-27.64.mcc");
         assertTrue(Files.exists(external));
 
-        RegionFile region = RegionFile.open(file);
+        RegionFile region = open(file);
         assertNull(region.externalStamp(5));
 
         assertArrayEquals(nbt, read(region.openChunk(5)));
@@ -121,7 +140,7 @@ class RegionFileTest {
         TestRegions.write(file, Map.of(5, new TestChunk(nbt, TIMESTAMP, 2, true)));
         Files.delete(dir.resolve("c.5.0.mcc"));
 
-        RegionFile region = RegionFile.open(file);
+        RegionFile region = open(file);
 
         assertThrows(ChunkReadException.class, () -> region.openChunk(5));
     }
@@ -130,7 +149,7 @@ class RegionFileTest {
     void rewrittenRegionShowsAMovedOffsetWhenTheHeaderIsReadAgain() throws IOException {
         Path file = dir.resolve("r.0.0.mca");
         TestRegions.write(file, Map.of(5, new TestChunk(nbt, TIMESTAMP, 2, false)));
-        RegionFile region = RegionFile.open(file);
+        RegionFile region = open(file);
         int before = region.header().offsets()[5];
 
         TestRegions.write(file, Map.of(
@@ -149,7 +168,7 @@ class RegionFileTest {
             channel.truncate(8192 + 5 + nbt.length - 10);
         }
 
-        RegionFile region = RegionFile.open(file);
+        RegionFile region = open(file);
 
         assertTrue(region.present(5));
         assertThrows(ChunkReadException.class, () -> region.openChunk(5));
@@ -172,7 +191,7 @@ class RegionFileTest {
         TestRegions.write(file, Map.of(5, new TestChunk(nbt, TIMESTAMP, 2, false)));
         setSectorCount(file, 5, 0);
 
-        RegionFile region = RegionFile.open(file);
+        RegionFile region = open(file);
 
         assertTrue(region.present(5));
         assertThrows(ChunkReadException.class, () -> region.openChunk(5));
@@ -185,10 +204,10 @@ class RegionFileTest {
         TestRegions.write(file, Map.of(
                 5, new TestChunk(twoSectors, TIMESTAMP, 3, false),
                 6, new TestChunk(nbt, TIMESTAMP, 3, false)));
-        assertEquals(2, RegionFile.open(file).header().offsets()[5] & 0xFF);
+        assertEquals(2, open(file).header().offsets()[5] & 0xFF);
         setSectorCount(file, 5, 1);
 
-        RegionFile region = RegionFile.open(file);
+        RegionFile region = open(file);
 
         ChunkReadException e = assertThrows(ChunkReadException.class, () -> region.openChunk(5));
         assertTrue(e.getMessage().contains("sectors"), e.getMessage());
@@ -202,7 +221,7 @@ class RegionFileTest {
         System.arraycopy(nbt, 0, filling, 0, nbt.length);
         TestRegions.write(file, Map.of(5, new TestChunk(filling, TIMESTAMP, 3, false)));
 
-        RegionFile region = RegionFile.open(file);
+        RegionFile region = open(file);
 
         assertEquals(2, region.header().offsets()[5] & 0xFF);
         assertArrayEquals(filling, read(region.openChunk(5)));
@@ -213,7 +232,7 @@ class RegionFileTest {
         Path file = dir.resolve("r.0.0.mca");
         TestRegions.write(file, Map.of(5, new TestChunk(nbt, TIMESTAMP, 127, false)));
 
-        RegionFile region = RegionFile.open(file);
+        RegionFile region = open(file);
 
         UnsupportedCompressionException e = assertThrows(UnsupportedCompressionException.class, () -> region.openChunk(5));
         assertEquals("unsupported compression 127", e.getMessage());
@@ -225,7 +244,7 @@ class RegionFileTest {
         Path file = dir.resolve("r.0.0.mca");
         TestRegions.write(file, Map.of(5, new TestChunk(nbt, TIMESTAMP, 9, true)));
 
-        RegionFile region = RegionFile.open(file);
+        RegionFile region = open(file);
 
         UnsupportedCompressionException e = assertThrows(UnsupportedCompressionException.class, () -> region.openChunk(5));
         assertEquals(9, e.compression());
@@ -235,7 +254,7 @@ class RegionFileTest {
     void externalFileChangedIsFalseWhileTheMccFileIsUntouched() throws IOException {
         Path file = dir.resolve("r.0.0.mca");
         TestRegions.write(file, Map.of(5, new TestChunk(nbt, TIMESTAMP, 2, true)));
-        RegionFile region = RegionFile.open(file);
+        RegionFile region = open(file);
         read(region.openChunk(5));
 
         assertFalse(region.externalFileChanged(5));
@@ -246,7 +265,7 @@ class RegionFileTest {
         Path file = dir.resolve("r.0.0.mca");
         TestRegions.write(file, Map.of(5, new TestChunk(nbt, TIMESTAMP, 2, true)));
         Path external = dir.resolve("c.5.0.mcc");
-        RegionFile region = RegionFile.open(file);
+        RegionFile region = open(file);
         read(region.openChunk(5));
         FileTime opened = Files.getLastModifiedTime(external);
 
@@ -260,7 +279,7 @@ class RegionFileTest {
     void externalFileChangedIsTrueWhenTheMccFileIsDeleted() throws IOException {
         Path file = dir.resolve("r.0.0.mca");
         TestRegions.write(file, Map.of(5, new TestChunk(nbt, TIMESTAMP, 2, true)));
-        RegionFile region = RegionFile.open(file);
+        RegionFile region = open(file);
         read(region.openChunk(5));
 
         Files.delete(dir.resolve("c.5.0.mcc"));
@@ -272,7 +291,7 @@ class RegionFileTest {
     void externalFileChangedIsFalseForAnInternalChunk() throws IOException {
         Path file = dir.resolve("r.0.0.mca");
         TestRegions.write(file, Map.of(5, new TestChunk(nbt, TIMESTAMP, 2, false)));
-        RegionFile region = RegionFile.open(file);
+        RegionFile region = open(file);
         read(region.openChunk(5));
 
         assertFalse(region.externalFileChanged(5));
@@ -283,7 +302,7 @@ class RegionFileTest {
         Path file = dir.resolve("r.0.0.mca");
         Files.write(file, new byte[100]);
 
-        RegionFile region = RegionFile.open(file);
+        RegionFile region = open(file);
 
         for (int index = 0; index < 1024; index++) {
             assertFalse(region.present(index));
@@ -295,7 +314,7 @@ class RegionFileTest {
         Path file = dir.resolve("r.0.0.mca");
         Files.write(file, new byte[0]);
 
-        assertFalse(RegionFile.open(file).present(0));
+        assertFalse(open(file).present(0));
     }
 
     @Test

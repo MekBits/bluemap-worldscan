@@ -97,6 +97,21 @@ tasks.register<JavaExec>("measureBackup") {
     }
 }
 
+// Measures the speed of a full scan of a dimension folder, with no rate cap, and prints a hash of
+// what it found. Usage: ./gradlew benchmarkScan -Pdimension=<folder that holds region/> [-Pruns=3]
+tasks.register<JavaExec>("benchmarkScan") {
+    description = "Prints the chunks per second and the bytes allocated per chunk of a full scan."
+    group = "other"
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass = "dk.mekbits.bluemapworldscan.testsupport.ScanBenchmark"
+    maxHeapSize = "2g"
+    doFirst {
+        val dimension = providers.gradleProperty("dimension").orNull
+            ?: throw GradleException("pass the dimension folder with -Pdimension=<dir>")
+        args(listOfNotNull(dimension, providers.gradleProperty("runs").orNull))
+    }
+}
+
 tasks.jar {
     archiveClassifier = "plain"
 }
