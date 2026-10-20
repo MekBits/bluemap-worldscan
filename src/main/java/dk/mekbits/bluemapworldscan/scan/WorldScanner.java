@@ -1,7 +1,6 @@
 package dk.mekbits.bluemapworldscan.scan;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -22,6 +21,7 @@ import dk.mekbits.bluemapworldscan.chunk.ChunkInfo;
 import dk.mekbits.bluemapworldscan.chunk.ChunkInfo.Kind;
 import dk.mekbits.bluemapworldscan.chunk.ChunkReader;
 import dk.mekbits.bluemapworldscan.chunk.FoundStructure;
+import dk.mekbits.bluemapworldscan.region.ChunkBuffers;
 import dk.mekbits.bluemapworldscan.region.ChunkReadException;
 import dk.mekbits.bluemapworldscan.region.RegionFile;
 import dk.mekbits.bluemapworldscan.region.RegionFile.RegionHeader;
@@ -115,34 +115,41 @@ public final class WorldScanner {
         Pacer pacer = new Pacer(limits.maxChunksPerSecond());
         boolean cancelled = false;
         int processed = 0;
-        for (Map.Entry<String, Path> file : files.entrySet()) {
-            if (cancel.isCancelled()) {
-                cancelled = true;
-                break;
-            }
-            int[] coords = Objects.requireNonNull(RegionFile.coords(file.getKey()));
-            ScanReport.Builder tally = new ScanReport.Builder();
-            RegionFile region;
-            try {
-                region = RegionFile.open(file.getValue());
-            } catch (IOException e) {
-                Log.warn("cannot open " + file.getValue() + ": " + e);
-                total.failed++;
+        try (ChunkBuffers buffers = new ChunkBuffers(ChunkReader.MAX_NBT_BYTES)) {
+            for (Map.Entry<String, Path> file : files.entrySet()) {
+                if (cancel.isCancelled()) {
+                    cancelled = true;
+                    break;
+                }
+                int[] coords = Objects.requireNonNull(RegionFile.coords(file.getKey()));
+                ScanReport.Builder tally = new ScanReport.Builder();
+                RegionFile region;
+                try {
+                    region = RegionFile.open(file.getValue());
+                } catch (IOException e) {
+                    Log.warn("cannot open " + file.getValue() + ": " + e);
+                    total.failed++;
+                    processed++;
+                    continue;
+                }
+                RegionEntry entry;
+                try {
+                    entry = scanRegion(
+                            region, file.getValue(), coords[0], coords[1], regions.get(file.getKey()),
+                            pacer, cancel, afterChunkRead, buffers, tally);
+                } finally {
+                    close(region, file.getValue());
+                }
+                if (entry == null) {
+                    cancelled = true;
+                    break;
+                }
+                regions.put(file.getKey(), entry);
+                total.add(tally);
                 processed++;
-                continue;
-            }
-            RegionEntry entry = scanRegion(
-                    region, file.getValue(), coords[0], coords[1], regions.get(file.getKey()),
-                    pacer, cancel, afterChunkRead, tally);
-            if (entry == null) {
-                cancelled = true;
-                break;
-            }
-            regions.put(file.getKey(), entry);
-            total.add(tally);
-            processed++;
-            if (processed % CHECKPOINT_EVERY_REGIONS == 0) {
-                checkpoint.accept(snapshot(previous, regions));
+                if (processed % CHECKPOINT_EVERY_REGIONS == 0) {
+                    checkpoint.accept(snapshot(previous, regions));
+                }
             }
         }
 
@@ -152,6 +159,15 @@ public final class WorldScanner {
             Log.debug("DataVersions of " + dimensionFolder + ": " + report.dataVersions());
         }
         return new ScanOutcome(snapshot(previous, regions), report, false, cancelled);
+    }
+
+    /** Closing a file that was only read cannot lose anything, so a failure is only logged. */
+    private static void close(RegionFile region, Path file) {
+        try {
+            region.close();
+        } catch (IOException e) {
+            Log.debug("cannot close " + file + ": " + e);
+        }
     }
 
     private static ScanOutcome skipped(ScanState previous) {
@@ -190,6 +206,7 @@ public final class WorldScanner {
             Pacer pacer,
             CancellationToken cancel,
             BiConsumer<Path, Integer> afterChunkRead,
+            ChunkBuffers buffers,
             ScanReport.Builder tally) {
         int[] timestamps = previous != null ? previous.timestamps().clone() : neverRead();
         BitSet replaced = new BitSet(CHUNKS);
@@ -213,7 +230,7 @@ public final class WorldScanner {
             if (!pacer.await(cancel)) {
                 return null;
             }
-            ChunkInfo info = readChunk(region, file, index, tally);
+            ChunkInfo info = readChunk(region, file, index, buffers, tally);
             afterChunkRead.accept(file, index);
             if (info == null) {
                 continue;
@@ -263,9 +280,12 @@ public final class WorldScanner {
     }
 
     /** The chunk's data, or null when it cannot be read (already counted as failed or unsupported). */
-    private static @Nullable ChunkInfo readChunk(RegionFile region, Path file, int index, ScanReport.Builder tally) {
-        try (InputStream in = region.openChunk(index)) {
-            return ChunkReader.read(in);
+    private static @Nullable ChunkInfo readChunk(
+            RegionFile region, Path file, int index, ChunkBuffers buffers, ScanReport.Builder tally) {
+        try {
+            // The read may grow the buffer, so the array is taken after it.
+            int length = region.readChunk(index, buffers);
+            return ChunkReader.read(buffers.data(), length);
         } catch (UnsupportedCompressionException e) {
             tally.unsupportedCompression++;
             Log.debug(file.getFileName() + " chunk " + index + ": " + e.getMessage());
