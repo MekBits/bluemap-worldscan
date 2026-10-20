@@ -212,8 +212,8 @@ name (a datapack's, or one newer than the client jar) is named from its id, as "
 - A world gets layers for at most 512 biomes (vanilla has about 65). Above that the first 512 by id
   get one, and a warning says how many were left out. Biomes in `biomes.disabled` do not count.
 - Two limits protect the game server's memory and the browser. The addon holds one entry for every
-  biome and cell pair before it joins the cells, and builds no biome layers for a world with more
-  than 2,000,000 pairs (about 144 MB of heap, 72 bytes a pair). After the areas are worked out, it
+  biome and cell pair before it traces the outlines, and builds no biome layers for a world with
+  more than 2,000,000 pairs (at most 64 MB of heap, 16 to 32 bytes a pair). After the areas are worked out, it
   estimates their size in `live/markers.json` (365 bytes an area and 21 a corner), and builds no
   biome layers for a world whose areas come to more than 100,000,000 bytes. In both cases a warning
   names `biomes.cellSizeChunks`, and a larger cell fixes it. The structure layers are not affected.
