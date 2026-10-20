@@ -178,7 +178,7 @@ public final class LayerBuilder {
     }
 
     /**
-     * Where a structure's marker and its {@code /tp} go: the middle of its box, on top of it. The
+     * Where a structure's marker goes: the middle of its box, on top of it. The
      * middle of the box is inside rock for buried structures, so the height is the top.
      *
      * @param box {minX, minY, minZ, maxX, maxY, maxZ}

@@ -81,7 +81,7 @@ class LayerBuilderTest {
         assertEquals(new Poi(
                 "4_71_4", "Village", 4, 71, 4, MarkerData.popupHtml("Village", 4, 71, 4),
                 "maps/m/assets/village.png", IconComposer.ICON_SIZE / 2, IconComposer.ICON_SIZE / 2, 5000), poi);
-        assertTrue(poi.detail().contains("/tp @s 4 71 4"));
+        assertTrue(poi.detail().contains("4 71 4"));
     }
 
     @Test

@@ -14,26 +14,17 @@ class MarkerDataTest {
     }
 
     @Test
-    void thePopupHoldsTheNameTheCoordinatesAndACopyableTpCommand() {
+    void thePopupHoldsTheNameAndTheCoordinates() {
         String html = MarkerData.popupHtml("Village", 160, 63, -320);
 
-        assertTrue(html.contains("<strong>Village</strong>"), html);
-        assertTrue(html.contains("160 63 -320<pre>"), html);
-        assertTrue(html.contains("<pre>/tp @s 160 63 -320</pre>"), html);
+        assertEquals("<div class=\"worldscan-popup\"><strong>Village</strong><br>160 63 -320</div>", html);
     }
 
-    /**
-     * BlueMap's label box is as narrow as the name, so a command in an inline element breaks at its
-     * spaces. A {@code pre} does not wrap, and its text must keep plain ASCII spaces because Minecraft's
-     * command parser rejects non-breaking ones.
-     */
     @Test
-    void theTpCommandIsOneLineOfPlainSpaces() {
+    void thePopupHasNoTpCommand() {
         String html = MarkerData.popupHtml("Ocean monument", 207, 62, -897);
 
-        assertTrue(html.contains("<pre>/tp @s 207 62 -897</pre>"), html);
-        assertFalse(html.contains("<code>"), html);
-        assertFalse(html.contains("&nbsp;") || html.contains(" "), html);
+        assertFalse(html.contains("/tp"), html);
     }
 
     @Test
