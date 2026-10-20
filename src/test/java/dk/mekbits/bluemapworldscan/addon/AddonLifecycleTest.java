@@ -99,7 +99,7 @@ class AddonLifecycleTest {
         Await.until("the layers on both maps", () -> has(first, MONUMENT_SET) && has(second, MONUMENT_SET));
         POIMarker monument = (POIMarker) first.getMarkerSets().get(MONUMENT_SET).getMarkers().values().iterator().next();
         assertEquals("Ocean monument", monument.getLabel());
-        assertTrue(monument.getDetail().contains("/tp @s"), monument.getDetail());
+        assertTrue(monument.getDetail().contains("<strong>Ocean monument</strong>"), monument.getDetail());
         for (InMemoryBlueMapMap map : List.of(first, second)) {
             Manifest manifest = assertOk(LayerStore.readManifest(map.storage()));
             assertEquals(AddonFolder.scannerId(folder), manifest.scannerId());
