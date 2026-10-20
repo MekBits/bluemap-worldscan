@@ -5,8 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
-import java.util.Set;
-import java.util.stream.Collectors;
 
 import dk.mekbits.bluemapworldscan.chunk.StructureIds;
 import org.junit.jupiter.api.Test;
@@ -70,23 +68,6 @@ class LayerCatalogTest {
     @Test
     void anUnknownIdWithOddCharactersGetsASafeLayerId() {
         assertEquals("my_pack_towers_big.one", LayerCatalog.layerFor("My Pack:towers/big.one").id());
-    }
-
-    @Test
-    void theDefaultHiddenLayersAreTheDenseKinds() {
-        Set<String> hidden = LayerCatalog.layers().stream()
-                .filter(Layer::defaultHidden)
-                .map(Layer::id)
-                .collect(Collectors.toSet());
-
-        assertEquals(
-                Set.of("mineshaft", "shipwreck", "ocean_ruin", "ruined_portal", "buried_treasure", "nether_fossil"),
-                hidden);
-    }
-
-    @Test
-    void theAbandonedCampIsShownByDefault() {
-        assertEquals(false, LayerCatalog.layerFor("minecraft:abandoned_camp_forest").defaultHidden());
     }
 
     @Test

@@ -31,11 +31,16 @@ class AddonConfigTest {
         assertEquals(500, config.maxChunksPerSecond());
         assertEquals(5, config.refreshMinutes());
         assertEquals(List.of("mineshaft", "buried_treasure"), config.structures().disabledLayers());
+        assertEquals(List.of(), config.structures().shownLayers());
         assertTrue(config.biomes().enabled());
         assertEquals(16, config.biomes().cellSizeChunks());
         assertEquals(List.of(), config.biomes().disabled());
+        assertEquals(List.of(), config.biomes().shown());
         assertEquals(config, AddonConfig.loadOrCreate(folder), "the written file reads back as the same settings");
-        assertTrue(Files.readString(folder.resolve("config.json")).contains("\"disabledLayers\""));
+        String written = Files.readString(folder.resolve("config.json"));
+        assertTrue(written.contains("\"disabledLayers\""));
+        assertTrue(written.contains("\"shownLayers\""), "the written file shows where to switch layers on");
+        assertTrue(written.contains("\"shown\""));
     }
 
     @Test
@@ -60,6 +65,30 @@ class AddonConfigTest {
         assertTrue(config.biomes().enabled());
         assertEquals(List.of(), config.structures().disabledLayers());
         assertTrue(config.scan());
+    }
+
+    @Test
+    void shownLayersAndShownBiomesAreReadAndKeepTheOtherKeysOfTheirBlock() throws IOException {
+        write("{\"structures\": {\"shownLayers\": [\"village\"]}, \"biomes\": {\"shown\": [\"plains\"]}}");
+
+        AddonConfig config = AddonConfig.loadOrCreate(folder);
+
+        assertTrue(config.scan());
+        assertEquals(List.of("village"), config.structures().shownLayers());
+        assertEquals(List.of("mineshaft", "buried_treasure"), config.structures().disabledLayers());
+        assertEquals(List.of("plains"), config.biomes().shown());
+        assertEquals(16, config.biomes().cellSizeChunks());
+    }
+
+    @Test
+    void aFileWithoutTheShownKeysStartsEveryLayerSwitchedOff() throws IOException {
+        write("{\"structures\": {\"disabledLayers\": [\"mineshaft\"]}, \"biomes\": {\"enabled\": true, \"cellSizeChunks\": 16, \"disabled\": []}}");
+
+        AddonConfig config = AddonConfig.loadOrCreate(folder);
+
+        assertTrue(config.scan());
+        assertEquals(List.of(), config.structures().shownLayers());
+        assertEquals(List.of(), config.biomes().shown());
     }
 
     @Test

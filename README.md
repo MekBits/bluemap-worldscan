@@ -126,12 +126,14 @@ A few consequences:
   "scanThreads": 1,
   "refreshMinutes": 5,
   "structures": {
-    "disabledLayers": ["mineshaft", "buried_treasure"]
+    "disabledLayers": ["mineshaft", "buried_treasure"],
+    "shownLayers": []
   },
   "biomes": {
     "enabled": true,
     "cellSizeChunks": 16,
-    "disabled": []
+    "disabled": [],
+    "shown": []
   }
 }
 ```
@@ -143,9 +145,11 @@ A few consequences:
 | `scanThreads` | `1` | How many region files a scan reads at the same time, from 1 to 64. More than 1 is for an instance that has the CPU to itself, such as the BlueMap CLI container; see [Performance](#performance). Scanning instance only. |
 | `refreshMinutes` | `5` | How often an instance with `scan` off looks for a new generation of layers. `0` turns it off. An instance that scans does not use it. |
 | `structures.disabledLayers` | `["mineshaft", "buried_treasure"]` | Layer ids that are not built. Scanning instance only. See the table below. |
+| `structures.shownLayers` | `[]` | Layer ids that start switched on in the sidebar: `["village", "stronghold"]`. Every other layer starts switched off. Scanning instance only. See [Layers](#layers) for the ids. |
 | `biomes.enabled` | `true` | Whether biome layers are built. `false` builds none. Scanning instance only. |
 | `biomes.cellSizeChunks` | `16` | The resolution of the biome areas: the side of a cell in chunks. From 1 to 1,875,000 (the world border, 30,000,000 blocks, in chunks). A larger cell gives a coarser, smaller layer. Scanning instance only. See [Biomes](#biomes). |
 | `biomes.disabled` | `[]` | Biomes that are not built, as ids with or without the namespace: `["plains", "minecraft:river", "some_pack:crystal_caves"]`. Scanning instance only. |
+| `biomes.shown` | `[]` | Biomes whose layer starts switched on in the sidebar, as ids with or without the namespace, like `biomes.disabled`. Every other biome layer starts switched off. Scanning instance only. See [Biomes](#biomes) for the ids. |
 
 A config that cannot be read, or that holds an impossible value (such as a negative
 `maxChunksPerSecond`, or a `biomes.cellSizeChunks` outside its range), logs one line and gives the
@@ -157,34 +161,42 @@ instance with `scan` on deletes the stored scan state and the `reset` file, and 
 ### Layers
 
 Each layer is a marker set with the id `worldscan-structure-<layer id>` and shows in BlueMap's
-sidebar. Layers marked "off" start switched off in the sidebar. Layers marked "not built" are in
-`structures.disabledLayers` by default and have no markers until you remove them from it.
+sidebar. Every layer starts switched off, unless its id is in `structures.shownLayers`. The ids in
+the first column are what `structures.shownLayers` and `structures.disabledLayers` take. Layers
+marked "not built" are in `structures.disabledLayers` by default and have no markers until you
+remove them from it.
+
+To start villages, strongholds and trial chambers switched on:
+
+```json
+{ "structures": { "shownLayers": ["village", "stronghold", "trial_chambers"] } }
+```
 
 | Layer id | Sidebar name | Default |
 |---|---|---|
-| `abandoned_camp` | Abandoned camp | on |
-| `ancient_city` | Ancient city | on |
-| `bastion_remnant` | Bastion remnant | on |
-| `buried_treasure` | Buried treasure | not built (off when built) |
-| `desert_pyramid` | Desert pyramid | on |
-| `end_city` | End city | on |
-| `end_city_ship` | End city ship | on |
-| `igloo` | Igloo | on |
-| `jungle_pyramid` | Jungle pyramid | on |
-| `mineshaft` | Mineshaft | not built (off when built) |
-| `fortress` | Nether fortress | on |
-| `nether_fossil` | Nether fossil | off |
-| `monument` | Ocean monument | on |
-| `ocean_ruin` | Ocean ruin | off |
-| `pillager_outpost` | Pillager outpost | on |
-| `ruined_portal` | Ruined portal | off |
-| `shipwreck` | Shipwreck | off |
-| `stronghold` | Stronghold | on |
-| `swamp_hut` | Swamp hut | on |
-| `trail_ruins` | Trail ruins | on |
-| `trial_chambers` | Trial chambers | on |
-| `village` | Village | on |
-| `mansion` | Woodland mansion | on |
+| `abandoned_camp` | Abandoned camp | built |
+| `ancient_city` | Ancient city | built |
+| `bastion_remnant` | Bastion remnant | built |
+| `buried_treasure` | Buried treasure | not built |
+| `desert_pyramid` | Desert pyramid | built |
+| `end_city` | End city | built |
+| `end_city_ship` | End city ship | built |
+| `igloo` | Igloo | built |
+| `jungle_pyramid` | Jungle pyramid | built |
+| `mineshaft` | Mineshaft | not built |
+| `fortress` | Nether fortress | built |
+| `nether_fossil` | Nether fossil | built |
+| `monument` | Ocean monument | built |
+| `ocean_ruin` | Ocean ruin | built |
+| `pillager_outpost` | Pillager outpost | built |
+| `ruined_portal` | Ruined portal | built |
+| `shipwreck` | Shipwreck | built |
+| `stronghold` | Stronghold | built |
+| `swamp_hut` | Swamp hut | built |
+| `trail_ruins` | Trail ruins | built |
+| `trial_chambers` | Trial chambers | built |
+| `village` | Village | built |
+| `mansion` | Woodland mansion | built |
 
 A layer holds all variants of its kind: `village` has the plains, desert, savanna, snowy and taiga
 villages, `mineshaft` has the badlands mineshaft, `ruined_portal` has the nether, ocean and other
@@ -192,8 +204,9 @@ portals, and `ocean_ruin` and `shipwreck` hold their variants too.
 
 A structure id the addon does not know (from a datapack, or from a Minecraft version newer than
 26.3) gets a layer of its own, named from the id: `some_pack:big_tower` becomes "Big tower
-(some_pack)" with the layer id `some_pack_big_tower`. It has no icon and is on by default. The
-unknown id is also listed in the log after the scan.
+(some_pack)" with the layer id `some_pack_big_tower`. It has no icon and starts switched off like the
+others; put `some_pack_big_tower` in `structures.shownLayers` to start it switched on. The unknown id
+is also listed in the log after the scan.
 
 The end city ship layer has a marker at the ship itself, not at the end city.
 
@@ -203,7 +216,7 @@ Each biome found in the world is a marker set with the id `worldscan-biome-<name
 (`worldscan-biome-minecraft-lush_caves`) and the sidebar name "Biome: " followed by the English
 name of the biome, from the language file of the Minecraft client jar. A biome the file does not
 name (a datapack's, or one newer than the client jar) is named from its id, as "Crystal caves
-(some_pack)". Every biome layer starts switched off.
+(some_pack)". Every biome layer starts switched off, unless the biome is in `biomes.shown`.
 
 - A layer shows the areas where the biome occurs **at any height**, so cave biomes such as Lush
   Caves and Deep Dark show as well. It is not a map of the surface biome.
@@ -237,6 +250,25 @@ name (a datapack's, or one newer than the client jar) is named from its id, as "
   only the layer is.
 - The Nether and End maps show the biomes of their own dimensions.
 - Biomes saved by older Minecraft versions show under their current names.
+
+These are the ids of the 67 biomes of Minecraft 26.3, for `biomes.shown` and `biomes.disabled`.
+A datapack's biome goes in with its namespace, as `some_pack:crystal_caves`.
+
+| Kind | Biome ids |
+|---|---|
+| Overworld land | `plains`, `sunflower_plains`, `snowy_plains`, `ice_spikes`, `desert`, `savanna`, `savanna_plateau`, `windswept_savanna`, `badlands`, `eroded_badlands`, `wooded_badlands`, `forest`, `flower_forest`, `birch_forest`, `old_growth_birch_forest`, `dark_forest`, `pale_garden`, `cherry_grove`, `dappled_forest`, `taiga`, `snowy_taiga`, `old_growth_pine_taiga`, `old_growth_spruce_taiga`, `jungle`, `sparse_jungle`, `bamboo_jungle`, `swamp`, `mangrove_swamp` |
+| Mountains | `windswept_hills`, `windswept_forest`, `windswept_gravelly_hills`, `meadow`, `grove`, `snowy_slopes`, `jagged_peaks`, `frozen_peaks`, `stony_peaks` |
+| Shores, rivers, mushrooms | `mushroom_fields`, `beach`, `snowy_beach`, `stony_shore`, `river`, `frozen_river` |
+| Oceans | `ocean`, `deep_ocean`, `cold_ocean`, `deep_cold_ocean`, `lukewarm_ocean`, `deep_lukewarm_ocean`, `warm_ocean`, `frozen_ocean`, `deep_frozen_ocean` |
+| Caves | `dripstone_caves`, `lush_caves`, `deep_dark`, `sulfur_caves` |
+| Nether | `nether_wastes`, `soul_sand_valley`, `crimson_forest`, `warped_forest`, `basalt_deltas` |
+| End | `the_end`, `small_end_islands`, `end_highlands`, `end_midlands`, `end_barrens`, `the_void` |
+
+To start the Lush Caves and Deep Dark layers switched on:
+
+```json
+{ "biomes": { "shown": ["lush_caves", "deep_dark"] } }
+```
 
 The biome layers add to `live/markers.json`, which every browser loads: see the next section.
 

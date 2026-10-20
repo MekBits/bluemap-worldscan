@@ -26,32 +26,32 @@ public final class LayerCatalog {
     private static final String MINECRAFT = "minecraft";
 
     /** The ship of an end city; it is not a structure id of its own. */
-    public static final Layer END_CITY_SHIP = new Layer("end_city_ship", "End city ship", false, item("elytra"), WIDE);
+    public static final Layer END_CITY_SHIP = new Layer("end_city_ship", "End city ship", item("elytra"), WIDE);
 
     private static final List<Layer> LAYERS = List.of(
-            new Layer("abandoned_camp", "Abandoned camp", false, item("campfire"), WIDE),
-            new Layer("ancient_city", "Ancient city", false, item("echo_shard"), WIDE),
-            new Layer("bastion_remnant", "Bastion remnant", false, item("gold_ingot"), WIDE),
-            new Layer("buried_treasure", "Buried treasure", true, item("heart_of_the_sea"), ZOOMED_IN),
-            new Layer("desert_pyramid", "Desert pyramid", false, block("chiseled_sandstone"), WIDE),
-            new Layer("end_city", "End city", false, item("shulker_shell"), WIDE),
+            new Layer("abandoned_camp", "Abandoned camp", item("campfire"), WIDE),
+            new Layer("ancient_city", "Ancient city", item("echo_shard"), WIDE),
+            new Layer("bastion_remnant", "Bastion remnant", item("gold_ingot"), WIDE),
+            new Layer("buried_treasure", "Buried treasure", item("heart_of_the_sea"), ZOOMED_IN),
+            new Layer("desert_pyramid", "Desert pyramid", block("chiseled_sandstone"), WIDE),
+            new Layer("end_city", "End city", item("shulker_shell"), WIDE),
             END_CITY_SHIP,
-            new Layer("igloo", "Igloo", false, item("snowball"), WIDE),
-            new Layer("jungle_pyramid", "Jungle pyramid", false, block("mossy_cobblestone"), WIDE),
-            new Layer("mineshaft", "Mineshaft", true, item("iron_pickaxe"), ZOOMED_IN),
-            new Layer("fortress", "Nether fortress", false, item("blaze_rod"), WIDE),
-            new Layer("nether_fossil", "Nether fossil", true, item("bone"), ZOOMED_IN),
-            new Layer("monument", "Ocean monument", false, block("prismarine_bricks"), WIDE),
-            new Layer("ocean_ruin", "Ocean ruin", true, item("trident"), ZOOMED_IN),
-            new Layer("pillager_outpost", "Pillager outpost", false, item("crossbow_standby"), WIDE),
-            new Layer("ruined_portal", "Ruined portal", true, block("obsidian"), ZOOMED_IN),
-            new Layer("shipwreck", "Shipwreck", true, item("oak_boat"), ZOOMED_IN),
-            new Layer("stronghold", "Stronghold", false, item("ender_eye"), WIDE),
-            new Layer("swamp_hut", "Swamp hut", false, item("cauldron"), WIDE),
-            new Layer("trail_ruins", "Trail ruins", false, item("brush"), WIDE),
-            new Layer("trial_chambers", "Trial chambers", false, item("trial_key"), ZOOMED_IN),
-            new Layer("village", "Village", false, item("bell"), WIDE),
-            new Layer("mansion", "Woodland mansion", false, item("totem_of_undying"), WIDE));
+            new Layer("igloo", "Igloo", item("snowball"), WIDE),
+            new Layer("jungle_pyramid", "Jungle pyramid", block("mossy_cobblestone"), WIDE),
+            new Layer("mineshaft", "Mineshaft", item("iron_pickaxe"), ZOOMED_IN),
+            new Layer("fortress", "Nether fortress", item("blaze_rod"), WIDE),
+            new Layer("nether_fossil", "Nether fossil", item("bone"), ZOOMED_IN),
+            new Layer("monument", "Ocean monument", block("prismarine_bricks"), WIDE),
+            new Layer("ocean_ruin", "Ocean ruin", item("trident"), ZOOMED_IN),
+            new Layer("pillager_outpost", "Pillager outpost", item("crossbow_standby"), WIDE),
+            new Layer("ruined_portal", "Ruined portal", block("obsidian"), ZOOMED_IN),
+            new Layer("shipwreck", "Shipwreck", item("oak_boat"), ZOOMED_IN),
+            new Layer("stronghold", "Stronghold", item("ender_eye"), WIDE),
+            new Layer("swamp_hut", "Swamp hut", item("cauldron"), WIDE),
+            new Layer("trail_ruins", "Trail ruins", item("brush"), WIDE),
+            new Layer("trial_chambers", "Trial chambers", item("trial_key"), ZOOMED_IN),
+            new Layer("village", "Village", item("bell"), WIDE),
+            new Layer("mansion", "Woodland mansion", item("totem_of_undying"), WIDE));
 
     private static final Map<String, Integer> ORDER = LAYERS.stream()
             .collect(Collectors.toUnmodifiableMap(Layer::id, LAYERS::indexOf));
@@ -86,7 +86,7 @@ public final class LayerCatalog {
     private static Layer unknown(String namespace, String path) {
         String label = IdLabels.fromId(namespace + ":" + path);
         String id = (namespace + "_" + path).toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9_.-]", "_");
-        return new Layer(id, label, false, null, WIDE);
+        return new Layer(id, label, null, WIDE);
     }
 
     private static String namespaceOf(String id) {
