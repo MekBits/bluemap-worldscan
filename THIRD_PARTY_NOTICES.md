@@ -37,10 +37,10 @@ layouts and field names on `Chunk_1_13` and `Chunk_1_18`, of BlueMap v5.29
 
 ## a24k/bluemap-structures-paper (MIT)
 
-Not bundled. The layer icons (the choice of vanilla textures per layer, the 22x22 composition, the
-download of the Minecraft client jar checked against Mojang's sha1), the layer names and zoom
-tiers, the marker popup and the writing of icons to a map's asset storage are adapted from this
-project (<https://github.com/a24k/bluemap-structures-paper>).
+Not bundled. The layer icons (the choice of vanilla textures per layer, the composition of an
+icon from its texture, the download of the Minecraft client jar checked against Mojang's sha1),
+the layer names and zoom tiers, the marker popup and the writing of icons to a map's asset
+storage are adapted from this project (<https://github.com/a24k/bluemap-structures-paper>).
 
     MIT License
 
