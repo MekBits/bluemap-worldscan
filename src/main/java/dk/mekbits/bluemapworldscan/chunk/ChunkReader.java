@@ -35,7 +35,7 @@ import org.jetbrains.annotations.Nullable;
  */
 public final class ChunkReader {
 
-    /** The largest NBT document accepted; also bounds what a corrupt length may make the reader allocate. */
+    /** The largest NBT document accepted, in decompressed bytes; also bounds what a corrupt length may make the reader allocate. */
     public static final long MAX_NBT_BYTES = 16L << 20;
 
     private static final int FIRST_1_13_DATA_VERSION = 1466;
@@ -247,7 +247,9 @@ public final class ChunkReader {
                 }
             }
             in.exit();
-            palettes.add(palette);
+            if (!palette.isEmpty()) {
+                palettes.add(palette);
+            }
         }
         in.exit();
         return palettes;
@@ -279,9 +281,14 @@ public final class ChunkReader {
             in.exit();
             return List.of();
         }
+        // A palette longer than MAX_BIOME_PALETTE is dropped, so the names past that are only skipped.
         List<String> strings = new ArrayList<>(Math.min(count, MAX_BIOME_PALETTE + 1));
         for (int i = 0; i < count; i++) {
-            strings.add(in.readString());
+            if (strings.size() <= MAX_BIOME_PALETTE) {
+                strings.add(in.readString());
+            } else {
+                in.skip(NbtInput.STRING);
+            }
         }
         in.exit();
         return strings;
@@ -310,8 +317,12 @@ public final class ChunkReader {
         for (int type = in.readType(); type != NbtInput.END; type = in.readType()) {
             in.readName();
             String key = in.nameAsString();
-            if (type == NbtInput.COMPOUND) {
-                starts.put(key, start(in));
+            Start start = type == NbtInput.COMPOUND ? start(in) : null;
+            // A start without an id or a piece with a box gives no structure, so it is not kept.
+            if (start != null && start.id() != null && !start.pieces().isEmpty()) {
+                starts.put(key, start);
+            } else if (start != null) {
+                starts.remove(key);
             } else {
                 starts.remove(key);
                 in.skip(type);
@@ -364,7 +375,10 @@ public final class ChunkReader {
                 }
             }
             in.exit();
-            pieces.add(new Piece(box, template));
+            // A piece without a box is not read, so only the ones with one are kept.
+            if (box != null && box.length == BOX_LENGTH) {
+                pieces.add(new Piece(box, template));
+            }
         }
         in.exit();
         return pieces;

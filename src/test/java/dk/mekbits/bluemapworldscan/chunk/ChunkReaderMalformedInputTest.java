@@ -76,7 +76,7 @@ class ChunkReaderMalformedInputTest {
     }
 
     @Test
-    void aByteArrayLargerThanTheLimitIsRejectedBeforeItIsRead() throws IOException {
+    void aDocumentLargerThanTheLimitIsRejected() throws IOException {
         // A well-formed document, only larger than the 16 MiB limit.
         InputStream document = documentWithByteArray(20 << 20);
 
@@ -127,6 +127,25 @@ class ChunkReaderMalformedInputTest {
         }
 
         assertUnreadable(bytes.toByteArray());
+    }
+
+    @Test
+    void compoundsNestedAsDeepAsAdventureNbtAllowsAreRead() throws IOException {
+        // adventure-nbt checks the depth before it steps down, so the root and 512 more levels pass.
+        int depth = 512;
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        DataOutputStream out = new DataOutputStream(bytes);
+        out.writeByte(COMPOUND);
+        out.writeUTF("");
+        for (int i = 0; i < depth; i++) {
+            out.writeByte(COMPOUND);
+            out.writeUTF("a");
+        }
+        for (int i = 0; i <= depth; i++) {
+            out.writeByte(0);
+        }
+
+        assertDoesNotThrow(() -> ChunkReader.read(new ByteArrayInputStream(bytes.toByteArray())));
     }
 
     @Test

@@ -12,9 +12,11 @@ import java.util.Arrays;
  * without building them.
  *
  * <p>It checks what adventure-nbt's reader checks: a known tag type, a length that is not negative
- * and fits the document, a list of {@code TAG_End} that is empty, and at most 512 nested compounds,
- * lists and arrays. Strings that are skipped are not decoded, so a malformed name or string in a
- * skipped tag is not an error.
+ * and fits the document, a list of {@code TAG_End} that is empty, and at most 513 nested compounds,
+ * lists and arrays. Unlike adventure-nbt it bounds the document by its raw bytes, not by the bytes
+ * its strings would take as Java chars. Strings that are skipped are not decoded, so a malformed
+ * name or string in a skipped tag is not an error, and names are compared as bytes, so an overlong
+ * UTF-8 encoding of a name does not match it.
  */
 final class NbtInput {
 
@@ -32,7 +34,7 @@ final class NbtInput {
     static final int INT_ARRAY = 11;
     static final int LONG_ARRAY = 12;
 
-    /** adventure-nbt's limit, also on compounds, lists and arrays. */
+    /** adventure-nbt's limit, also on compounds, lists and arrays; like it, the check is before the step down. */
     private static final int MAX_DEPTH = 512;
 
     private final byte[] buffer;
@@ -126,7 +128,7 @@ final class NbtInput {
 
     /** One level deeper: a compound, list or array. */
     void enter() throws IOException {
-        if (++depth > MAX_DEPTH) {
+        if (depth++ > MAX_DEPTH) {
             throw new IOException("NBT nested deeper than " + MAX_DEPTH);
         }
     }
