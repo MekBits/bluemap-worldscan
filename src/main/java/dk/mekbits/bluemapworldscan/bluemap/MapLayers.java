@@ -58,16 +58,27 @@ public final class MapLayers {
             reportOnce(generation + reason, "cannot show " + generation + ", keeping the layers shown now: " + reason);
             return false;
         }
+        return show(file, stored.generation());
+    }
+
+    /**
+     * Publishes layers this instance has just stored as {@code generation}, without reading them
+     * back from the storage.
+     *
+     * @return whether sets were published
+     */
+    public boolean show(LayersFile layers, long generation) {
+        String name = "generation " + generation + " of map " + map.getId();
         try {
-            publisher.publish(map, file);
+            publisher.publish(map, layers);
         } catch (RuntimeException e) {
             // BlueMap reloaded, so this reference to the map is dead; the next onEnable brings a new one.
-            reportOnce(generation + e, "cannot show " + generation + ": " + e);
+            reportOnce(name + e, "cannot show " + name + ": " + e);
             return false;
         }
-        publishedGeneration = stored.generation();
+        publishedGeneration = generation;
         lastProblem = null;
-        Log.info("showing " + generation + " (" + file.sets().size() + " layers)");
+        Log.info("showing " + name + " (" + layers.sets().size() + " layers)");
         return true;
     }
 
