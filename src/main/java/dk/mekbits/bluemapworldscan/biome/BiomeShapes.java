@@ -41,8 +41,9 @@ public final class BiomeShapes {
     public static final long MAX_ESTIMATED_BYTES = 100_000_000L;
     /**
      * The most (biome, cell) pairs held before the outlines are traced. A pair takes 16 to 32 bytes
-     * in the set the cells are collected in, so this allows at most 64 MB of heap. The measured overworld has 617,761
-     * pairs at 4 chunks per cell, 222,876 at 8, 1,890,859 at 2 and 6,301,195 at 1.
+     * in the set the cells are collected in (48 for a moment while a set grows), so this allows about
+     * 32 to 64 MB of heap, plus the outlines of one biome while it is traced. The measured overworld
+     * has 617,761 pairs at 4 chunks per cell, 222,876 at 8, 1,890,859 at 2 and 6,301,195 at 1.
      */
     public static final long MAX_CELLS = 2_000_000L;
 
@@ -506,7 +507,7 @@ public final class BiomeShapes {
         }
     }
 
-    /** A set of non-negative longs with open addressing, about 16 bytes an element. */
+    /** A set of non-negative longs with open addressing, 16 to 32 bytes an element. */
     private static final class LongSet {
         private static final long EMPTY = -1;
         private long[] slots = filled(16);

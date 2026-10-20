@@ -213,12 +213,14 @@ name (a datapack's, or one newer than the client jar) is named from its id, as "
   get one, and a warning says how many were left out. Biomes in `biomes.disabled` do not count.
 - Two limits protect the game server's memory and the browser. The addon holds one entry for every
   biome and cell pair before it traces the outlines, and builds no biome layers for a world with
-  more than 2,000,000 pairs (at most 64 MB of heap, 16 to 32 bytes a pair). After the areas are worked out, it
+  more than 2,000,000 pairs (about 32 to 64 MB of heap, 16 to 32 bytes a pair). After the areas are worked out, it
   estimates their size in `live/markers.json` (365 bytes an area and 21 a corner), and builds no
   biome layers for a world whose areas come to more than 100,000,000 bytes. In both cases a warning
   names `biomes.cellSizeChunks`, and a larger cell fixes it. The structure layers are not affected.
   The measured overworld has 6,301,195 pairs at 1 chunk per cell, which is over the first limit, and
-  1,890,859 at 2, 617,761 at 4 and 222,876 at 8, which are under it.
+  1,890,859 at 2, 617,761 at 4 and 222,876 at 8, which are under it. A world whose region files lie
+  more than about 2 billion cells apart (far beyond the world border) gets no biome layers either,
+  with a warning that names `biomes.cellSizeChunks`.
 - The biome layers outline every chunk whose biomes have been generated, at the resolution of the
   cell, also outside a map's render bounds or mask. With small cells that is close to the per-chunk
   biome data of the world, and it is shown to everyone who can open the map. `biomes.disabled` hides
