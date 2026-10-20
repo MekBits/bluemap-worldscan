@@ -134,6 +134,22 @@ class BiomeShapesTest {
     }
 
     @Test
+    void regionsTooFarApartForTheGridGetNoPolygonsAndAWarningThatALargerCellFixes() {
+        // Region x 70,000,000 is 2,240,000,000 chunks from region x 0: more than a packed cell holds.
+        Map<String, RegionEntry> regions = new TreeMap<>();
+        regions.putAll(state("r.0.0.mca", 0).regions());
+        regions.putAll(state("r.70000000.0.mca", 0).regions());
+        ScanState farApart = new ScanState(ScanState.FORMAT_VERSION, "world-1", new TreeMap<>(regions));
+
+        try (LogCapture log = new LogCapture()) {
+            assertTrue(BiomeShapes.build(farApart, 1).isEmpty());
+            assertTrue(log.warnings().stream().anyMatch(message -> message.contains("biomes.cellSizeChunks")
+                    && message.contains("too far apart") && message.contains("world-1")), log.warnings().toString());
+        }
+        assertEquals(2, BiomeShapes.build(farApart, 32).get(BIOME).size(), "a larger cell fixes it");
+    }
+
+    @Test
     void aWorldWithExactlyTheMostCellsIsBuilt() {
         assertEquals(1, plains(state("r.0.0.mca", 0, 1, 2), 1, 3, Long.MAX_VALUE).size());
     }
