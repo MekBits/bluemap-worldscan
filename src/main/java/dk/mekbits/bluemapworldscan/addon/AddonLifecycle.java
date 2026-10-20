@@ -217,7 +217,6 @@ public final class AddonLifecycle {
         ScheduledThreadPoolExecutor executor = new ScheduledThreadPoolExecutor(1, task -> {
             Thread thread = new Thread(task, "bluemap-worldscan");
             thread.setDaemon(true);
-            // Linux ignores Java thread priorities; maxChunksPerSecond is what limits the scan.
             thread.setPriority(Thread.MIN_PRIORITY);
             return thread;
         });

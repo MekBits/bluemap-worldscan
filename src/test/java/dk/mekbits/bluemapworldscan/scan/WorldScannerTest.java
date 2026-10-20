@@ -23,6 +23,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Stream;
 
@@ -768,6 +769,56 @@ class WorldScannerTest {
             assertEquals(one.state().regions().get(region).structures().size(), four.state().regions().get(region).structures().size());
         }
         assertEquals(480, four.report().read());
+    }
+
+    @Test
+    void aCancelWithSeveralThreadsKeepsOnlyTheRegionsBeforeTheCutOne() throws IOException {
+        for (int x = 0; x < 16; x++) {
+            Map<Integer, TestChunk> chunks = new HashMap<>();
+            for (int i = 0; i < 20; i++) {
+                chunks.put(i, zlib(chunk(x * 32 + i, 0, "minecraft:plains"), TS));
+            }
+            TestRegions.write(regionFile("r." + x + ".0.mca"), chunks);
+        }
+        CancellationToken cancel = new CancellationToken();
+
+        ScanOutcome cut = WorldScanner.scan(world, emptyState(), new ScanLimits(0, 4), cancel, state -> {
+        }, (file, chunkIndex) -> {
+            if (file.getFileName().toString().equals("r.5.0.mca") && chunkIndex == 10) {
+                cancel.cancel();
+            }
+        });
+
+        assertTrue(cut.cancelled());
+        List<String> sorted = new ArrayList<>(new TreeSet<>(regionNames(16)));
+        List<String> kept = new ArrayList<>(cut.state().regions().keySet());
+        assertEquals(sorted.subList(0, kept.size()), kept, "only a run of regions from the first, in name order");
+        assertFalse(kept.contains("r.5.0.mca"), "the cut region");
+        assertEquals(20L * kept.size(), cut.report().read());
+    }
+
+    private static List<String> regionNames(int count) {
+        List<String> names = new ArrayList<>();
+        for (int x = 0; x < count; x++) {
+            names.add("r." + x + ".0.mca");
+        }
+        return names;
+    }
+
+    @Test
+    void anExceptionInAReaderThreadEndsTheScanWithThatException() throws IOException {
+        for (int x = 0; x < 6; x++) {
+            TestRegions.write(regionFile("r." + x + ".0.mca"), Map.of(0, zlib(chunk(x * 32, 0, "minecraft:plains"), TS)));
+        }
+
+        IllegalStateException e = assertThrows(IllegalStateException.class, () -> WorldScanner.scan(
+                world, emptyState(), new ScanLimits(0, 4), new CancellationToken(), state -> {
+                }, (file, chunkIndex) -> {
+                    if (file.getFileName().toString().equals("r.3.0.mca")) {
+                        throw new IllegalStateException("broken reader");
+                    }
+                }));
+        assertEquals("broken reader", e.getMessage());
     }
 
     @Test

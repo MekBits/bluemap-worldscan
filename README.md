@@ -315,17 +315,17 @@ scanner logs a warning with the settings that make them smaller.
 
 ## Performance
 
-- The scan runs on one thread called `bluemap-worldscan`. It is a daemon thread at the lowest Java
-  priority. **Java thread priorities have no effect on Linux** (HotSpot ignores them by default),
-  so on Linux `maxChunksPerSecond` is what limits the CPU and disk use of a scan. Lower it if the
-  game server's tick time rises during the first scan.
+- The scan runs on a thread called `bluemap-worldscan`, and with `scanThreads` above 1 also on
+  `bluemap-worldscan-reader-N`. They are daemon threads at the lowest Java priority. **Java thread
+  priorities have no effect on Linux** (HotSpot ignores them by default), so on Linux
+  `maxChunksPerSecond` is what limits the CPU and disk use of a scan, and with `0` nothing does.
+  Lower it if the game server's tick time rises during the first scan.
 - The rate cap counts only chunks that are read. At the default of 500 chunks per second, a first
   scan of 4.2 million chunks (4,178,459 chunks over three dimensions) takes about 2.3 hours. Later
   scans read only changed chunks. A chunk costs about 70 microseconds of CPU to read, most of it
   zlib, so the default cap uses a few percent of one core.
 - With no cap (`maxChunksPerSecond` `0`), one thread reads about 10,000 chunks a second from a warm
-  disk cache. With `scanThreads` above 1, as many region files are read at once on threads called
-  `bluemap-worldscan-reader-N`, at the same low priority; a 95,697-chunk world took 9.6 s on one
+  disk cache. With `scanThreads` above 1, as many region files are read at once; a 95,697-chunk world took 9.6 s on one
   thread, 5.1 s on two, 2.9 s on four and 1.8 s on eight. The cap holds over all the threads. Keep
   `scanThreads` at 1 inside a game server.
 - The scan state is saved to the addon folder every 100 regions, at most once a minute, so a scan

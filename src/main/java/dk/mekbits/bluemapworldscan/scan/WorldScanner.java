@@ -64,7 +64,6 @@ public final class WorldScanner {
     private static final int CHECKPOINT_EVERY_REGIONS = 100;
     /** A checkpoint writes the whole state so far, so a fast scan must not write one every few seconds. */
     private static final long MIN_CHECKPOINT_NANOS = TimeUnit.MINUTES.toNanos(1);
-    private static final long SLEEP_SLICE_NANOS = TimeUnit.MILLISECONDS.toNanos(50);
 
     private WorldScanner() {
     }
@@ -80,8 +79,8 @@ public final class WorldScanner {
      * @param previous the state to start from; it is never changed
      * @param checkpoint called with the state so far after every 100 regions, but at most once a
      *     minute; an exception it throws ends the scan
-     * @param cancel checked between chunks; a thread interrupt while the scan waits for the rate
-     *     cap counts as a cancel
+     * @param cancel checked between chunks; an interrupt of the scan thread or a reader thread counts
+     *     as a cancel
      */
     public static ScanOutcome scan(
             Path dimensionFolder,
@@ -143,8 +142,7 @@ public final class WorldScanner {
         int sinceCheckpoint = 0;
         long lastCheckpoint = System.nanoTime();
         int threads = limits.threads();
-        // One thread reads on the caller's thread; more read whole regions in parallel, which are
-        // taken in name order on the caller's thread, so the state and the checkpoints are the same.
+        // Regions are taken in name order on this thread, so more threads give what one gives.
         ExecutorService readers = threads > 1 ? newReaders(threads) : null;
         BlockingQueue<ChunkBuffers> buffers = new ArrayBlockingQueue<>(threads);
         for (int i = 0; i < threads; i++) {
@@ -168,6 +166,10 @@ public final class WorldScanner {
                 }
                 Map.Entry<String, Future<RegionResult>> next = inFlight.removeFirst();
                 RegionResult result = join(next.getValue());
+                if (stop) {
+                    // One thread would not have read the regions after the cut one.
+                    continue;
+                }
                 if (result == null || result.cut()) {
                     cancelled = true;
                     stop = true;
@@ -180,7 +182,7 @@ public final class WorldScanner {
                 }
                 regions.put(next.getKey(), result.entry());
                 total.add(result.tally());
-                if (!stop && sinceCheckpoint >= CHECKPOINT_EVERY_REGIONS
+                if (sinceCheckpoint >= CHECKPOINT_EVERY_REGIONS
                         && System.nanoTime() - lastCheckpoint >= minCheckpointNanos) {
                     checkpoint.accept(snapshot(previous, regions));
                     sinceCheckpoint = 0;
@@ -499,51 +501,5 @@ public final class WorldScanner {
         int[] timestamps = new int[CHUNKS];
         Arrays.fill(timestamps, NEVER_READ);
         return timestamps;
-    }
-
-    /**
-     * Keeps the rate of chunk reads at the cap, over all reader threads: each read is due one
-     * interval after the one before. A sleep that overshoots (on Windows a sleep lasts a millisecond
-     * or more) is made up by the reads after it, but at most {@link #MAX_CREDIT_NANOS} of it, so
-     * time the scan spent busy elsewhere buys only a short burst. A cap of 0 is no cap.
-     */
-    private static final class Pacer {
-        private static final long MAX_CREDIT_NANOS = TimeUnit.MILLISECONDS.toNanos(20);
-        private final long intervalNanos;
-        private long next = System.nanoTime();
-
-        Pacer(int perSecond) {
-            this.intervalNanos = perSecond == 0 ? 0 : TimeUnit.SECONDS.toNanos(1) / perSecond;
-        }
-
-        /** Waits until the next read may start; false when the scan was cancelled or interrupted meanwhile. */
-        boolean await(CancellationToken cancel) {
-            if (intervalNanos == 0) {
-                return !cancel.isCancelled() && !Thread.currentThread().isInterrupted();
-            }
-            long due = reserve();
-            long now = System.nanoTime();
-            while (due - now > 0) {
-                if (cancel.isCancelled()) {
-                    return false;
-                }
-                try {
-                    TimeUnit.NANOSECONDS.sleep(Math.min(due - now, SLEEP_SLICE_NANOS));
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    return false;
-                }
-                now = System.nanoTime();
-            }
-            return !cancel.isCancelled();
-        }
-
-        /** The time the next read is due; taking it books that slot. */
-        private synchronized long reserve() {
-            next = Math.max(next, System.nanoTime() - MAX_CREDIT_NANOS);
-            long due = next;
-            next += intervalNanos;
-            return due;
-        }
     }
 }
