@@ -47,11 +47,13 @@ public final class LayerBuilder {
 
     /**
      * Builds one set per layer that has structures and is not in {@code structures.disabledLayers}.
+     * A set starts switched off unless its layer is in {@code structures.shownLayers}.
      *
      * @param iconUrls layer id to icon URL; the URL names the map, so this is called once per map
      */
     public static List<LayerSet> buildStructures(ScanState state, AddonConfig config, Map<String, String> iconUrls) {
         Set<String> disabled = Set.copyOf(config.structures().disabledLayers());
+        Set<String> shown = Set.copyOf(config.structures().shownLayers());
         Map<Layer, Map<String, Poi>> poisByLayer = new LinkedHashMap<>();
 
         for (RegionEntry region : state.regions().values()) {
@@ -68,17 +70,17 @@ public final class LayerBuilder {
         List<LayerSet> sets = new ArrayList<>();
         for (Layer layer : layers) {
             sets.add(new LayerSet(
-                    STRUCTURE_SET_PREFIX + layer.id(), layer.label(), layer.defaultHidden(), sets.size(),
+                    STRUCTURE_SET_PREFIX + layer.id(), layer.label(), !shown.contains(layer.id()), sets.size(),
                     List.copyOf(poisByLayer.get(layer).values())));
         }
         return sets;
     }
 
     /**
-     * Builds one hidden set per biome in the state that is not in {@code biomes.disabled}, with one
-     * shape marker per connected area of the biome (holes included). The sets hold no icon URLs,
-     * so they are built once per world and are the same on every map. The result is empty when
-     * {@code biomes.enabled} is off.
+     * Builds one set per biome in the state that is not in {@code biomes.disabled}, with one shape
+     * marker per connected area of the biome (holes included). A set starts switched off unless its
+     * biome is in {@code biomes.shown}. The sets hold no icon URLs, so they are built once per world
+     * and are the same on every map. The result is empty when {@code biomes.enabled} is off.
      *
      * <p>The sets are in the order of their names; {@link #combine} puts them after the structure
      * sets in the sidebar.
@@ -89,9 +91,8 @@ public final class LayerBuilder {
         if (!config.biomes().enabled()) {
             return List.of();
         }
-        Set<String> disabled = config.biomes().disabled().stream()
-                .map(id -> id.indexOf(':') < 0 ? "minecraft:" + id : id)
-                .collect(Collectors.toUnmodifiableSet());
+        Set<String> disabled = withNamespaces(config.biomes().disabled());
+        Set<String> shown = withNamespaces(config.biomes().shown());
         Map<String, List<Polygon>> shapes = BiomeShapes.build(state, config.biomes().cellSizeChunks(), biome -> !disabled.contains(biome));
 
         List<LayerSet> sets = new ArrayList<>();
@@ -103,11 +104,18 @@ public final class LayerBuilder {
             }
             String label = names.label(biomeId);
             sets.add(new LayerSet(
-                    uniqueSetId(biomeId, usedIds), BIOME_LABEL_PREFIX + label, true, 0, List.of(),
+                    uniqueSetId(biomeId, usedIds), BIOME_LABEL_PREFIX + label, !shown.contains(biomeId), 0, List.of(),
                     areas(biomeId, label, biome.getValue())));
         }
         sets.sort(Comparator.comparing(LayerSet::label).thenComparing(LayerSet::id));
         return renumbered(sets, 0);
+    }
+
+    /** Biome ids from the configuration, an id without a namespace taken as minecraft's. */
+    private static Set<String> withNamespaces(List<String> biomeIds) {
+        return biomeIds.stream()
+                .map(id -> id.indexOf(':') < 0 ? "minecraft:" + id : id)
+                .collect(Collectors.toUnmodifiableSet());
     }
 
     /** The structure sets followed by the biome sets, numbered in that order for the sidebar. */

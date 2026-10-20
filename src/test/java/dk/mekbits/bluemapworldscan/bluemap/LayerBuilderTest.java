@@ -76,12 +76,28 @@ class LayerBuilderTest {
         assertEquals(1, sets.size());
         LayerSet village = set(sets, "village");
         assertEquals("Village", village.label());
-        assertFalse(village.defaultHidden());
+        assertTrue(village.defaultHidden(), "every layer starts switched off by default");
         Poi poi = village.pois().getFirst();
         assertEquals(new Poi(
                 "4_71_4", "Village", 4, 71, 4, MarkerData.popupHtml("Village", 4, 71, 4),
                 "maps/m/assets/village.png", IconComposer.ICON_SIZE / 2, IconComposer.ICON_SIZE / 2, 5000), poi);
         assertTrue(poi.detail().contains("4 71 4"));
+    }
+
+    @Test
+    void aLayerInShownLayersStartsSwitchedOnAndTheOthersStayOff() {
+        ScanState state = state(
+                structure(0, "minecraft:village_plains", 0, 60, 0, 9, 70, 9),
+                structure(1, "minecraft:igloo", 16, 60, 0, 25, 70, 9),
+                structure(2, "pack:big_tower", 32, 60, 0, 41, 80, 9));
+        AddonConfig config = new AddonConfig(true, 500, 5,
+                new AddonConfig.Structures(List.of(), List.of("village", "pack_big_tower")), DEFAULTS.biomes());
+
+        List<LayerSet> sets = LayerBuilder.buildStructures(state, config, Map.of());
+
+        assertFalse(set(sets, "village").defaultHidden());
+        assertFalse(set(sets, "pack_big_tower").defaultHidden(), "a datapack layer is named by its layer id");
+        assertTrue(set(sets, "igloo").defaultHidden());
     }
 
     @Test
@@ -293,6 +309,24 @@ class LayerBuilderTest {
         List<LayerSet> sets = LayerBuilder.buildBiomes(state, withBiomes(true, 4, "plains", "minecraft:desert", "pack:crystal_caves"), NAMES);
 
         assertEquals(List.of("worldscan-biome-minecraft-swamp"), sets.stream().map(LayerSet::id).toList());
+    }
+
+    @Test
+    void aBiomeInShownStartsSwitchedOnWhetherItIsNamedWithOrWithoutTheNamespace() {
+        ScanState state = TestStates.biomes(Map.of(
+                "minecraft:plains", new int[] {0},
+                "minecraft:desert", new int[] {40},
+                "pack:crystal_caves", new int[] {80},
+                "minecraft:swamp", new int[] {120}));
+        AddonConfig config = new AddonConfig(true, 500, 5, DEFAULTS.structures(),
+                new AddonConfig.Biomes(true, 4, List.of(), List.of("plains", "minecraft:desert", "pack:crystal_caves")));
+
+        List<LayerSet> sets = LayerBuilder.buildBiomes(state, config, NAMES);
+
+        assertFalse(biomeSet(sets, "minecraft-plains").defaultHidden());
+        assertFalse(biomeSet(sets, "minecraft-desert").defaultHidden());
+        assertFalse(biomeSet(sets, "pack-crystal_caves").defaultHidden());
+        assertTrue(biomeSet(sets, "minecraft-swamp").defaultHidden());
     }
 
     @Test

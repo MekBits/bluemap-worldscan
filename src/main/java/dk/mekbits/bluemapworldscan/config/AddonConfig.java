@@ -38,8 +38,15 @@ public record AddonConfig(
      * @param disabledLayers ids of the structure layers that are not built. The default holds
      *     mineshaft (more than half of all structures of a large world) and buried_treasure: the
      *     markers of a layer, hidden ones too, are part of the payload every browser loads
+     * @param shownLayers ids of the structure layers that start switched on in the sidebar; every
+     *     other layer starts switched off
      */
-    public record Structures(List<String> disabledLayers) {
+    public record Structures(List<String> disabledLayers, List<String> shownLayers) {
+
+        /** The settings with every layer switched off at the start. */
+        public Structures(List<String> disabledLayers) {
+            this(disabledLayers, List.of());
+        }
     }
 
     /**
@@ -47,8 +54,15 @@ public record AddonConfig(
      * @param cellSizeChunks the resolution of the biome areas, in chunks per cell side, from 1 to
      *     {@link #MAX_CELL_SIZE_CHUNKS}
      * @param disabled ids of the biomes that are not built
+     * @param shown ids of the biomes whose layer starts switched on in the sidebar; every other
+     *     biome layer starts switched off
      */
-    public record Biomes(boolean enabled, int cellSizeChunks, List<String> disabled) {
+    public record Biomes(boolean enabled, int cellSizeChunks, List<String> disabled, List<String> shown) {
+
+        /** The settings with every biome layer switched off at the start. */
+        public Biomes(boolean enabled, int cellSizeChunks, List<String> disabled) {
+            this(enabled, cellSizeChunks, disabled, List.of());
+        }
     }
 
     /** The world border, 30,000,000 blocks, in chunks: a larger cell is no coarser than one cell for the whole world. */
@@ -72,8 +86,8 @@ public record AddonConfig(
             throw new IllegalArgumentException("biomes.cellSizeChunks must be from 1 to " + MAX_CELL_SIZE_CHUNKS
                     + ": " + biomes.cellSizeChunks());
         }
-        structures = new Structures(List.copyOf(structures.disabledLayers()));
-        biomes = new Biomes(biomes.enabled(), biomes.cellSizeChunks(), List.copyOf(biomes.disabled()));
+        structures = new Structures(List.copyOf(structures.disabledLayers()), List.copyOf(structures.shownLayers()));
+        biomes = new Biomes(biomes.enabled(), biomes.cellSizeChunks(), List.copyOf(biomes.disabled()), List.copyOf(biomes.shown()));
     }
 
     /** The settings with one scan thread. */
