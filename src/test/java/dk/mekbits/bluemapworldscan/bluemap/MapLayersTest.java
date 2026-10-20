@@ -57,6 +57,18 @@ class MapLayersTest {
     }
 
     @Test
+    void layersJustStoredAreShownFromMemoryAndNotPublishedAgainByTheNextRefresh() throws IOException {
+        store(4, "village");
+        LayersFile justStored = new LayersFile(LayersFile.FORMAT_VERSION, List.of(new LayerSet("monument", "monument", false, 0, List.of())));
+
+        assertTrue(layers.show(justStored, 4));
+        assertEquals(Set.of("monument"), map.getMarkerSets().keySet(), "the sets in memory, not the stored ones");
+
+        assertFalse(layers.refreshIfNewer());
+        assertEquals(Set.of("monument"), map.getMarkerSets().keySet());
+    }
+
+    @Test
     void aNewerGenerationReplacesTheSets() throws IOException {
         store(1, "village", "igloo");
         layers.refreshIfNewer();

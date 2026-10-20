@@ -201,9 +201,9 @@ final class ScanPass {
             previousGeneration = stored.generation();
         }
         long generation = Math.max(System.currentTimeMillis(), previousGeneration + 1);
-        LayerStore.write(map.storage(), layers, new Manifest(Manifest.FORMAT_VERSION, generation, scannerId, addonVersion, sha1));
+        LayerStore.write(map.storage(), json, new Manifest(Manifest.FORMAT_VERSION, generation, scannerId, addonVersion, sha1));
         Log.info("stored generation " + generation + " of the layers of map " + mapId + " (" + markerCount(layers) + " markers)");
-        map.refreshIfNewer();
+        map.show(layers, generation);
     }
 
     static long estimatedServedBytes(LayersFile layers) {
