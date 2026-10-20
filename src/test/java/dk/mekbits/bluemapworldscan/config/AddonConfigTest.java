@@ -81,8 +81,36 @@ class AddonConfigTest {
     }
 
     @Test
+    void aCapOfZeroIsNoCapAndThreadsAreRead() throws IOException {
+        write("{\"maxChunksPerSecond\": 0, \"scanThreads\": 4}");
+
+        AddonConfig config = AddonConfig.loadOrCreate(folder);
+
+        assertTrue(config.scan());
+        assertEquals(0, config.maxChunksPerSecond());
+        assertEquals(4, config.scanThreads());
+    }
+
+    @Test
+    void oneScanThreadIsTheDefault() throws IOException {
+        write("{}");
+
+        assertEquals(1, AddonConfig.loadOrCreate(folder).scanThreads());
+    }
+
+    @Test
+    void noScanThreadsGivesTheDefaultsWithScanOff() throws IOException {
+        write("{\"scanThreads\": 0}");
+
+        AddonConfig config = AddonConfig.loadOrCreate(folder);
+
+        assertFalse(config.scan());
+        assertEquals(1, config.scanThreads());
+    }
+
+    @Test
     void anImpossibleValueGivesTheDefaultsWithScanOff() throws IOException {
-        write("{\"maxChunksPerSecond\": 0}");
+        write("{\"maxChunksPerSecond\": -1}");
 
         AddonConfig config = AddonConfig.loadOrCreate(folder);
 

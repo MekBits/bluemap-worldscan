@@ -6,14 +6,26 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.ArrayDeque;
 import java.util.BitSet;
 import java.util.Comparator;
+import java.util.Deque;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.SortedMap;
 import java.util.TreeMap;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
@@ -50,6 +62,8 @@ public final class WorldScanner {
     private static final int BIOME_WORDS = CHUNKS / Long.SIZE;
     private static final int NEVER_READ = -1;
     private static final int CHECKPOINT_EVERY_REGIONS = 100;
+    /** A checkpoint writes the whole state so far, so a fast scan must not write one every few seconds. */
+    private static final long MIN_CHECKPOINT_NANOS = TimeUnit.MINUTES.toNanos(1);
     private static final long SLEEP_SLICE_NANOS = TimeUnit.MILLISECONDS.toNanos(50);
 
     private WorldScanner() {
@@ -64,8 +78,8 @@ public final class WorldScanner {
      * the folder drops out of the state.
      *
      * @param previous the state to start from; it is never changed
-     * @param checkpoint called with the state so far after every 100 regions; an exception it
-     *     throws ends the scan
+     * @param checkpoint called with the state so far after every 100 regions, but at most once a
+     *     minute; an exception it throws ends the scan
      * @param cancel checked between chunks; a thread interrupt while the scan waits for the rate
      *     cap counts as a cancel
      */
@@ -76,7 +90,7 @@ public final class WorldScanner {
             CancellationToken cancel,
             Consumer<ScanState> checkpoint) {
         return scan(dimensionFolder, previous, limits, cancel, checkpoint, (file, index) -> {
-        });
+        }, MIN_CHECKPOINT_NANOS);
     }
 
     /**
@@ -91,6 +105,18 @@ public final class WorldScanner {
             CancellationToken cancel,
             Consumer<ScanState> checkpoint,
             BiConsumer<Path, Integer> afterChunkRead) {
+        return scan(dimensionFolder, previous, limits, cancel, checkpoint, afterChunkRead, MIN_CHECKPOINT_NANOS);
+    }
+
+    /** As above, with the least time between two checkpoints; tests use 0. */
+    static ScanOutcome scan(
+            Path dimensionFolder,
+            ScanState previous,
+            ScanLimits limits,
+            CancellationToken cancel,
+            Consumer<ScanState> checkpoint,
+            BiConsumer<Path, Integer> afterChunkRead,
+            long minCheckpointNanos) {
         Path regionFolder = dimensionFolder.resolve("region");
         if (!Files.isDirectory(regionFolder)) {
             return skipped(previous);
@@ -114,43 +140,59 @@ public final class WorldScanner {
         ScanReport.Builder total = new ScanReport.Builder();
         Pacer pacer = new Pacer(limits.maxChunksPerSecond());
         boolean cancelled = false;
-        int processed = 0;
-        try (ChunkBuffers buffers = new ChunkBuffers(ChunkReader.MAX_NBT_BYTES)) {
-            for (Map.Entry<String, Path> file : files.entrySet()) {
-                if (cancel.isCancelled()) {
-                    cancelled = true;
+        int sinceCheckpoint = 0;
+        long lastCheckpoint = System.nanoTime();
+        int threads = limits.threads();
+        // One thread reads on the caller's thread; more read whole regions in parallel, which are
+        // taken in name order on the caller's thread, so the state and the checkpoints are the same.
+        ExecutorService readers = threads > 1 ? newReaders(threads) : null;
+        BlockingQueue<ChunkBuffers> buffers = new ArrayBlockingQueue<>(threads);
+        for (int i = 0; i < threads; i++) {
+            buffers.add(new ChunkBuffers(ChunkReader.MAX_NBT_BYTES));
+        }
+        try {
+            Iterator<Map.Entry<String, Path>> pending = files.entrySet().iterator();
+            Deque<Map.Entry<String, Future<RegionResult>>> inFlight = new ArrayDeque<>();
+            int window = threads == 1 ? 1 : threads * 2;
+            boolean stop = false;
+            while (true) {
+                while (!stop && inFlight.size() < window && pending.hasNext()) {
+                    Map.Entry<String, Path> file = pending.next();
+                    RegionEntry previousEntry = regions.get(file.getKey());
+                    Callable<RegionResult> read = () -> scanFile(
+                            file.getValue(), file.getKey(), previousEntry, pacer, cancel, afterChunkRead, buffers);
+                    inFlight.add(Map.entry(file.getKey(), readers == null ? inline(read) : readers.submit(read)));
+                }
+                if (inFlight.isEmpty()) {
                     break;
                 }
-                int[] coords = Objects.requireNonNull(RegionFile.coords(file.getKey()));
-                ScanReport.Builder tally = new ScanReport.Builder();
-                RegionFile region;
-                try {
-                    region = RegionFile.open(file.getValue());
-                } catch (IOException e) {
-                    Log.warn("cannot open " + file.getValue() + ": " + e);
-                    total.failed++;
-                    processed++;
+                Map.Entry<String, Future<RegionResult>> next = inFlight.removeFirst();
+                RegionResult result = join(next.getValue());
+                if (result == null || result.cut()) {
+                    cancelled = true;
+                    stop = true;
                     continue;
                 }
-                RegionEntry entry;
-                try {
-                    entry = scanRegion(
-                            region, file.getValue(), coords[0], coords[1], regions.get(file.getKey()),
-                            pacer, cancel, afterChunkRead, buffers, tally);
-                } finally {
-                    close(region, file.getValue());
+                sinceCheckpoint++;
+                if (result.entry() == null) {
+                    total.failed++;
+                    continue;
                 }
-                if (entry == null) {
-                    cancelled = true;
-                    break;
-                }
-                regions.put(file.getKey(), entry);
-                total.add(tally);
-                processed++;
-                if (processed % CHECKPOINT_EVERY_REGIONS == 0) {
+                regions.put(next.getKey(), result.entry());
+                total.add(result.tally());
+                if (!stop && sinceCheckpoint >= CHECKPOINT_EVERY_REGIONS
+                        && System.nanoTime() - lastCheckpoint >= minCheckpointNanos) {
                     checkpoint.accept(snapshot(previous, regions));
+                    sinceCheckpoint = 0;
+                    lastCheckpoint = System.nanoTime();
                 }
             }
+        } finally {
+            if (readers != null) {
+                readers.shutdownNow();
+                awaitReaders(readers);
+            }
+            buffers.forEach(ChunkBuffers::close);
         }
 
         ScanReport report = total.build();
@@ -159,6 +201,102 @@ public final class WorldScanner {
             Log.debug("DataVersions of " + dimensionFolder + ": " + report.dataVersions());
         }
         return new ScanOutcome(snapshot(previous, regions), report, false, cancelled);
+    }
+
+    /**
+     * What reading one region file gave: its new entry and its counts; no entry when the file could
+     * not be opened (counted as failed); or {@code cut} when a cancel cut it off.
+     */
+    private record RegionResult(@Nullable RegionEntry entry, ScanReport.@Nullable Builder tally, boolean cut) {
+        static final RegionResult CUT = new RegionResult(null, null, true);
+        static final RegionResult NOT_OPENED = new RegionResult(null, null, false);
+    }
+
+    private static RegionResult scanFile(
+            Path file,
+            String name,
+            @Nullable RegionEntry previous,
+            Pacer pacer,
+            CancellationToken cancel,
+            BiConsumer<Path, Integer> afterChunkRead,
+            BlockingQueue<ChunkBuffers> buffers) throws InterruptedException {
+        if (cancel.isCancelled()) {
+            return RegionResult.CUT;
+        }
+        int[] coords = Objects.requireNonNull(RegionFile.coords(name));
+        RegionFile region;
+        try {
+            region = RegionFile.open(file);
+        } catch (IOException e) {
+            Log.warn("cannot open " + file + ": " + e);
+            return RegionResult.NOT_OPENED;
+        }
+        ChunkBuffers own;
+        try {
+            own = buffers.take();
+        } catch (InterruptedException e) {
+            close(region, file);
+            throw e;
+        }
+        try {
+            ScanReport.Builder tally = new ScanReport.Builder();
+            RegionEntry entry = scanRegion(region, file, coords[0], coords[1], previous, pacer, cancel, afterChunkRead, own, tally);
+            return entry == null ? RegionResult.CUT : new RegionResult(entry, tally, false);
+        } finally {
+            buffers.add(own);
+            close(region, file);
+        }
+    }
+
+    /** Runs a read on the caller's thread; an exception it throws is thrown from {@link #join}. */
+    private static Future<RegionResult> inline(Callable<RegionResult> read) {
+        try {
+            return CompletableFuture.completedFuture(read.call());
+        } catch (Exception e) {
+            return CompletableFuture.failedFuture(e);
+        }
+    }
+
+    /** The result of a region read, or null when the wait for it was interrupted, which counts as a cancel. */
+    private static @Nullable RegionResult join(Future<RegionResult> result) {
+        try {
+            return result.get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return null;
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+                return null;
+            }
+            if (cause instanceof RuntimeException runtime) {
+                throw runtime;
+            }
+            if (cause instanceof Error error) {
+                throw error;
+            }
+            throw new IllegalStateException(cause);
+        }
+    }
+
+    private static ExecutorService newReaders(int threads) {
+        AtomicInteger number = new AtomicInteger();
+        return Executors.newFixedThreadPool(threads, task -> {
+            Thread thread = new Thread(task, "bluemap-worldscan-reader-" + number.incrementAndGet());
+            thread.setDaemon(true);
+            thread.setPriority(Thread.MIN_PRIORITY);
+            return thread;
+        });
+    }
+
+    /** An interrupted reader stops at its next chunk; one that is still busy after that is a daemon and is left. */
+    private static void awaitReaders(ExecutorService readers) {
+        try {
+            readers.awaitTermination(10, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     /** Closing a file that was only read cannot lose anything, so a failure is only logged. */
@@ -364,37 +502,48 @@ public final class WorldScanner {
     }
 
     /**
-     * Keeps the rate of chunk reads under the cap: each read is due one interval after the one
-     * before, or at once when the scan has been busy elsewhere (so idle time is no credit for a burst).
+     * Keeps the rate of chunk reads at the cap, over all reader threads: each read is due one
+     * interval after the one before. A sleep that overshoots (on Windows a sleep lasts a millisecond
+     * or more) is made up by the reads after it, but at most {@link #MAX_CREDIT_NANOS} of it, so
+     * time the scan spent busy elsewhere buys only a short burst. A cap of 0 is no cap.
      */
     private static final class Pacer {
+        private static final long MAX_CREDIT_NANOS = TimeUnit.MILLISECONDS.toNanos(20);
         private final long intervalNanos;
         private long next = System.nanoTime();
 
         Pacer(int perSecond) {
-            this.intervalNanos = TimeUnit.SECONDS.toNanos(1) / perSecond;
+            this.intervalNanos = perSecond == 0 ? 0 : TimeUnit.SECONDS.toNanos(1) / perSecond;
         }
 
         /** Waits until the next read may start; false when the scan was cancelled or interrupted meanwhile. */
         boolean await(CancellationToken cancel) {
+            if (intervalNanos == 0) {
+                return !cancel.isCancelled() && !Thread.currentThread().isInterrupted();
+            }
+            long due = reserve();
             long now = System.nanoTime();
-            while (next - now > 0) {
+            while (due - now > 0) {
                 if (cancel.isCancelled()) {
                     return false;
                 }
                 try {
-                    TimeUnit.NANOSECONDS.sleep(Math.min(next - now, SLEEP_SLICE_NANOS));
+                    TimeUnit.NANOSECONDS.sleep(Math.min(due - now, SLEEP_SLICE_NANOS));
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     return false;
                 }
                 now = System.nanoTime();
             }
-            if (cancel.isCancelled()) {
-                return false;
-            }
-            next = Math.max(next, now) + intervalNanos;
-            return true;
+            return !cancel.isCancelled();
+        }
+
+        /** The time the next read is due; taking it books that slot. */
+        private synchronized long reserve() {
+            next = Math.max(next, System.nanoTime() - MAX_CREDIT_NANOS);
+            long due = next;
+            next += intervalNanos;
+            return due;
         }
     }
 }
