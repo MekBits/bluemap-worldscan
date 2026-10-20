@@ -23,6 +23,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.TreeSet;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Stream;
 
@@ -678,11 +681,26 @@ class WorldScannerTest {
         }
         List<ScanState> checkpoints = new ArrayList<>();
 
-        ScanOutcome outcome = WorldScanner.scan(world, emptyState(), FAST, new CancellationToken(), checkpoints::add);
+        ScanOutcome outcome = WorldScanner.scan(world, emptyState(), FAST, new CancellationToken(), checkpoints::add,
+                (file, index) -> {
+                }, 0);
 
         assertEquals(2, checkpoints.size());
         assertEquals(100, checkpoints.get(0).regions().size());
         assertEquals(200, checkpoints.get(1).regions().size());
+        assertEquals(250, outcome.state().regions().size());
+    }
+
+    @Test
+    void aScanFasterThanACheckpointAMinuteWritesNoneInBetween() throws IOException {
+        for (int x = 0; x < 250; x++) {
+            TestRegions.write(regionFile("r." + x + ".0.mca"), Map.of());
+        }
+        List<ScanState> checkpoints = new ArrayList<>();
+
+        ScanOutcome outcome = WorldScanner.scan(world, emptyState(), FAST, new CancellationToken(), checkpoints::add);
+
+        assertTrue(checkpoints.isEmpty(), "250 empty regions take far less than a minute");
         assertEquals(250, outcome.state().regions().size());
     }
 
@@ -722,8 +740,142 @@ class WorldScannerTest {
     }
 
     @Test
-    void aCapBelowOneChunkPerSecondIsRejected() {
-        assertThrows(IllegalArgumentException.class, () -> new ScanLimits(0));
+    void aNegativeCapOrNoThreadsIsRejected() {
+        assertThrows(IllegalArgumentException.class, () -> new ScanLimits(-1));
+        assertThrows(IllegalArgumentException.class, () -> new ScanLimits(0, 0));
+        assertThrows(IllegalArgumentException.class, () -> new ScanLimits(0, ScanLimits.MAX_THREADS + 1));
+    }
+
+    @Test
+    void severalThreadsGiveTheSameStateAndCountsAsOne() throws IOException {
+        for (int x = 0; x < 12; x++) {
+            Map<Integer, TestChunk> chunks = new HashMap<>();
+            for (int i = 0; i < 40; i++) {
+                String structure = i % 7 == 0 ? "minecraft:igloo" : null;
+                chunks.put(i, zlib(structure == null
+                        ? chunk(x * 32 + i % 32, i / 32, "minecraft:plains")
+                        : chunk(x * 32 + i % 32, i / 32, "minecraft:plains", structure), TS));
+            }
+            TestRegions.write(regionFile("r." + x + ".0.mca"), chunks);
+        }
+
+        ScanOutcome one = WorldScanner.scan(world, emptyState(), new ScanLimits(0, 1), new CancellationToken(), state -> {
+        });
+        ScanOutcome four = WorldScanner.scan(world, emptyState(), new ScanLimits(0, 4), new CancellationToken(), state -> {
+        });
+
+        assertEquals(one.report(), four.report());
+        assertEquals(one.state().regions().keySet(), four.state().regions().keySet());
+        for (String region : one.state().regions().keySet()) {
+            assertArrayEquals(one.state().regions().get(region).timestamps(), four.state().regions().get(region).timestamps());
+            assertEquals(one.state().regions().get(region).structures().size(), four.state().regions().get(region).structures().size());
+        }
+        assertEquals(480, four.report().read());
+    }
+
+    @Test
+    void aCancelWithSeveralThreadsKeepsOnlyTheRegionsBeforeTheCutOne() throws IOException {
+        for (int x = 0; x < 16; x++) {
+            Map<Integer, TestChunk> chunks = new HashMap<>();
+            for (int i = 0; i < 20; i++) {
+                chunks.put(i, zlib(chunk(x * 32 + i, 0, "minecraft:plains"), TS));
+            }
+            TestRegions.write(regionFile("r." + x + ".0.mca"), chunks);
+        }
+        CancellationToken cancel = new CancellationToken();
+
+        ScanOutcome cut = WorldScanner.scan(world, emptyState(), new ScanLimits(0, 4), cancel, state -> {
+        }, (file, chunkIndex) -> {
+            if (file.getFileName().toString().equals("r.5.0.mca") && chunkIndex == 10) {
+                cancel.cancel();
+            }
+        });
+
+        assertTrue(cut.cancelled());
+        List<String> sorted = new ArrayList<>(new TreeSet<>(regionNames(16)));
+        List<String> kept = new ArrayList<>(cut.state().regions().keySet());
+        assertEquals(sorted.subList(0, kept.size()), kept, "only a run of regions from the first, in name order");
+        assertFalse(kept.contains("r.5.0.mca"), "the cut region");
+        assertEquals(20L * kept.size(), cut.report().read());
+    }
+
+    private static List<String> regionNames(int count) {
+        List<String> names = new ArrayList<>();
+        for (int x = 0; x < count; x++) {
+            names.add("r." + x + ".0.mca");
+        }
+        return names;
+    }
+
+    @Test
+    void anExceptionInAReaderThreadEndsTheScanWithThatException() throws IOException {
+        for (int x = 0; x < 6; x++) {
+            TestRegions.write(regionFile("r." + x + ".0.mca"), Map.of(0, zlib(chunk(x * 32, 0, "minecraft:plains"), TS)));
+        }
+
+        IllegalStateException e = assertThrows(IllegalStateException.class, () -> WorldScanner.scan(
+                world, emptyState(), new ScanLimits(0, 4), new CancellationToken(), state -> {
+                }, (file, chunkIndex) -> {
+                    if (file.getFileName().toString().equals("r.3.0.mca")) {
+                        throw new IllegalStateException("broken reader");
+                    }
+                }));
+        assertEquals("broken reader", e.getMessage());
+    }
+
+    @Test
+    void aReaderThatFailsAfterACancelDoesNotEndTheCancelledScan() throws Exception {
+        for (int x = 0; x < 6; x++) {
+            Map<Integer, TestChunk> chunks = new HashMap<>();
+            for (int i = 0; i < 5; i++) {
+                chunks.put(i, zlib(chunk(x * 32 + i, 0, "minecraft:plains"), TS));
+            }
+            TestRegions.write(regionFile("r." + x + ".0.mca"), chunks);
+        }
+        CancellationToken cancel = new CancellationToken();
+        CountDownLatch secondStarted = new CountDownLatch(1);
+        CountDownLatch cancelled = new CountDownLatch(1);
+
+        ScanOutcome outcome = WorldScanner.scan(world, emptyState(), new ScanLimits(0, 4), cancel, state -> {
+        }, (file, chunkIndex) -> {
+            String name = file.getFileName().toString();
+            try {
+                if (name.equals("r.1.0.mca")) {
+                    // Cancel only once r.2 is past its first cancel check, so it is still read.
+                    assertTrue(secondStarted.await(10, TimeUnit.SECONDS));
+                    cancel.cancel();
+                    cancelled.countDown();
+                } else if (name.equals("r.2.0.mca")) {
+                    secondStarted.countDown();
+                    assertTrue(cancelled.await(10, TimeUnit.SECONDS));
+                    throw new IllegalStateException("broken reader");
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+
+        assertTrue(outcome.cancelled());
+        assertFalse(outcome.state().regions().containsKey("r.2.0.mca"));
+    }
+
+    @Test
+    void theCapHoldsOverAllThreads() throws IOException {
+        for (int x = 0; x < 4; x++) {
+            Map<Integer, TestChunk> chunks = new HashMap<>();
+            for (int i = 0; i < 50; i++) {
+                chunks.put(i, zlib(chunk(x * 32 + i % 32, i / 32, "minecraft:plains"), TS));
+            }
+            TestRegions.write(regionFile("r." + x + ".0.mca"), chunks);
+        }
+
+        long start = System.nanoTime();
+        ScanOutcome outcome = WorldScanner.scan(world, emptyState(), new ScanLimits(200, 4), new CancellationToken(), state -> {
+        });
+        long elapsedMillis = (System.nanoTime() - start) / 1_000_000;
+
+        assertEquals(200, outcome.report().read());
+        assertTrue(elapsedMillis >= 900, "200 chunks at 200 per second over 4 threads took only " + elapsedMillis + " ms");
     }
 
     // ---- report

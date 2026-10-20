@@ -23,7 +23,7 @@ import dk.mekbits.bluemapworldscan.state.StructureEntry;
  * Measures how fast a full scan of a dimension folder is, with no rate cap: the time, the chunks
  * read per second and the bytes allocated per chunk read. It also prints a SHA-1 of what the scan
  * found, so two versions of the scanner can be checked to find the same structures and biomes.
- * The world is only read. Usage: {@code ScanBenchmark <dimension folder> [runs]}.
+ * The world is only read. Usage: {@code ScanBenchmark <dimension folder> [runs] [threads]}.
  */
 public final class ScanBenchmark {
 
@@ -32,10 +32,11 @@ public final class ScanBenchmark {
 
     public static void main(String[] args) throws Exception {
         if (args.length < 1) {
-            throw new IllegalArgumentException("usage: ScanBenchmark <dimension folder> [runs]");
+            throw new IllegalArgumentException("usage: ScanBenchmark <dimension folder> [runs] [threads]");
         }
         Path dimension = Path.of(args[0]);
         int runs = args.length > 1 ? Integer.parseInt(args[1]) : 3;
+        int scanThreads = args.length > 2 ? Integer.parseInt(args[2]) : 1;
         com.sun.management.ThreadMXBean threads = (com.sun.management.ThreadMXBean) ManagementFactory.getThreadMXBean();
         long thread = Thread.currentThread().threadId();
 
@@ -45,16 +46,17 @@ public final class ScanBenchmark {
             long cpuBefore = threads.getCurrentThreadCpuTime();
             long start = System.nanoTime();
             ScanOutcome outcome = WorldScanner.scan(
-                    dimension, empty, new ScanLimits(Integer.MAX_VALUE), new CancellationToken(), state -> {
+                    dimension, empty, new ScanLimits(0, scanThreads), new CancellationToken(), state -> {
                     });
             double seconds = (System.nanoTime() - start) / 1e9;
             double cpuSeconds = (threads.getCurrentThreadCpuTime() - cpuBefore) / 1e9;
             long allocated = threads.getThreadAllocatedBytes(thread) - allocatedBefore;
             long read = outcome.report().read() + outcome.report().pre113();
-            System.out.printf(Locale.ROOT,
-                    "run %d: %d chunks in %.2f s (cpu %.2f s): %.0f chunks/s, %.1f KB allocated per chunk, state %s%n",
-                    run, read, seconds, cpuSeconds, read / seconds, allocated / 1024.0 / Math.max(1, read),
-                    fingerprint(outcome.state()));
+            // The CPU time and the allocations are those of this thread, so they say nothing when other threads read.
+            String perChunk = scanThreads > 1 ? "" : String.format(Locale.ROOT, " (cpu %.2f s), %.1f KB allocated per chunk",
+                    cpuSeconds, allocated / 1024.0 / Math.max(1, read));
+            System.out.printf(Locale.ROOT, "run %d: %d chunks in %.2f s, %.0f chunks/s%s, state %s%n",
+                    run, read, seconds, read / seconds, perChunk, fingerprint(outcome.state()));
         }
     }
 

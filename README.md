@@ -123,6 +123,7 @@ A few consequences:
 {
   "scan": true,
   "maxChunksPerSecond": 500,
+  "scanThreads": 1,
   "refreshMinutes": 5,
   "structures": {
     "disabledLayers": ["mineshaft", "buried_treasure"]
@@ -138,16 +139,17 @@ A few consequences:
 | Key | Default | Meaning |
 |---|---|---|
 | `scan` | `true` | Whether this instance scans. Every instance shows the stored layers either way. |
-| `maxChunksPerSecond` | `500` | The most chunks a scan reads per second. At least 1. Scanning instance only. |
+| `maxChunksPerSecond` | `500` | The most chunks a scan reads per second, over all its threads. `0` is no cap. Scanning instance only. |
+| `scanThreads` | `1` | How many region files a scan reads at the same time, from 1 to 64. More than 1 is for an instance that has the CPU to itself, such as the BlueMap CLI container; see [Performance](#performance). Scanning instance only. |
 | `refreshMinutes` | `5` | How often an instance with `scan` off looks for a new generation of layers. `0` turns it off. An instance that scans does not use it. |
 | `structures.disabledLayers` | `["mineshaft", "buried_treasure"]` | Layer ids that are not built. Scanning instance only. See the table below. |
 | `biomes.enabled` | `true` | Whether biome layers are built. `false` builds none. Scanning instance only. |
 | `biomes.cellSizeChunks` | `16` | The resolution of the biome areas: the side of a cell in chunks. From 1 to 1,875,000 (the world border, 30,000,000 blocks, in chunks). A larger cell gives a coarser, smaller layer. Scanning instance only. See [Biomes](#biomes). |
 | `biomes.disabled` | `[]` | Biomes that are not built, as ids with or without the namespace: `["plains", "minecraft:river", "some_pack:crystal_caves"]`. Scanning instance only. |
 
-A config that cannot be read, or that holds an impossible value (such as `maxChunksPerSecond` below
-1, or a `biomes.cellSizeChunks` outside its range), logs one line and gives the defaults with
-`scan` off. A typo never starts a scan nobody asked for.
+A config that cannot be read, or that holds an impossible value (such as a negative
+`maxChunksPerSecond`, or a `biomes.cellSizeChunks` outside its range), logs one line and gives the
+defaults with `scan` off. A typo never starts a scan nobody asked for.
 
 To start over, create an empty file named `reset` in the addon folder. At the next enable, an
 instance with `scan` on deletes the stored scan state and the `reset` file, and scans every chunk.
@@ -313,15 +315,21 @@ scanner logs a warning with the settings that make them smaller.
 
 ## Performance
 
-- The scan runs on one thread called `bluemap-worldscan`. It is a daemon thread at the lowest Java
-  priority. **Java thread priorities have no effect on Linux** (HotSpot ignores them by default),
-  so on Linux `maxChunksPerSecond` is what limits the CPU and disk use of a scan. Lower it if the
-  game server's tick time rises during the first scan.
+- The scan runs on a thread called `bluemap-worldscan`, and with `scanThreads` above 1 also on
+  `bluemap-worldscan-reader-N`. They are daemon threads at the lowest Java priority. **Java thread
+  priorities have no effect on Linux** (HotSpot ignores them by default), so on Linux
+  `maxChunksPerSecond` is what limits the CPU and disk use of a scan, and with `0` nothing does.
+  Lower it if the game server's tick time rises during the first scan.
 - The rate cap counts only chunks that are read. At the default of 500 chunks per second, a first
   scan of 4.2 million chunks (4,178,459 chunks over three dimensions) takes about 2.3 hours. Later
-  scans read only changed chunks.
-- The scan state is saved to the addon folder every 100 regions, so a scan that is cancelled keeps
-  the regions it finished and the next scan continues from them. Layers are stored only after a
+  scans read only changed chunks. A chunk costs about 70 microseconds of CPU to read, most of it
+  zlib, so the default cap uses a few percent of one core.
+- With no cap (`maxChunksPerSecond` `0`), one thread reads about 10,000 chunks a second from a warm
+  disk cache. With `scanThreads` above 1, as many region files are read at once; a 95,697-chunk world took 9.6 s on one
+  thread, 5.1 s on two, 2.9 s on four and 1.8 s on eight. The cap holds over all the threads. Keep
+  `scanThreads` at 1 inside a game server.
+- The scan state is saved to the addon folder every 100 regions, at most once a minute, so a scan
+  that is cancelled keeps the regions it finished and the next scan continues from them. Layers are stored only after a
   complete pass, so every stored generation is complete.
 - When a scan is cancelled (server stop, reload), the layers that were stored before stay as they
   are.

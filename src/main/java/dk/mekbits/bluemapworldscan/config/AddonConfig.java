@@ -15,6 +15,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import dk.mekbits.bluemapworldscan.scan.ScanLimits;
 import dk.mekbits.bluemapworldscan.util.Log;
 
 /**
@@ -24,13 +25,14 @@ import dk.mekbits.bluemapworldscan.util.Log;
  * other settings decide what the scanning instance stores, and every instance shows that.
  *
  * @param scan whether this instance scans the world
- * @param maxChunksPerSecond the most chunks a scan reads per second
+ * @param maxChunksPerSecond the most chunks a scan reads per second; 0 is no cap
+ * @param scanThreads how many region files a scan reads at the same time
  * @param refreshMinutes how often an instance that does not scan looks for new layers; 0 turns it off
  * @param structures the structure layer settings
  * @param biomes the biome layer settings
  */
 public record AddonConfig(
-        boolean scan, int maxChunksPerSecond, int refreshMinutes, Structures structures, Biomes biomes) {
+        boolean scan, int maxChunksPerSecond, int scanThreads, int refreshMinutes, Structures structures, Biomes biomes) {
 
     /**
      * @param disabledLayers ids of the structure layers that are not built. The default holds
@@ -57,8 +59,11 @@ public record AddonConfig(
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
 
     public AddonConfig {
-        if (maxChunksPerSecond < 1) {
-            throw new IllegalArgumentException("maxChunksPerSecond must be at least 1: " + maxChunksPerSecond);
+        if (maxChunksPerSecond < 0) {
+            throw new IllegalArgumentException("maxChunksPerSecond must not be negative: " + maxChunksPerSecond);
+        }
+        if (scanThreads < 1 || scanThreads > ScanLimits.MAX_THREADS) {
+            throw new IllegalArgumentException("scanThreads must be from 1 to " + ScanLimits.MAX_THREADS + ": " + scanThreads);
         }
         if (refreshMinutes < 0) {
             throw new IllegalArgumentException("refreshMinutes must not be negative: " + refreshMinutes);
@@ -71,9 +76,14 @@ public record AddonConfig(
         biomes = new Biomes(biomes.enabled(), biomes.cellSizeChunks(), List.copyOf(biomes.disabled()));
     }
 
+    /** The settings with one scan thread. */
+    public AddonConfig(boolean scan, int maxChunksPerSecond, int refreshMinutes, Structures structures, Biomes biomes) {
+        this(scan, maxChunksPerSecond, 1, refreshMinutes, structures, biomes);
+    }
+
     /** The settings of a folder without a config file. */
     public static AddonConfig defaults() {
-        return new AddonConfig(true, 500, 5, new Structures(List.of("mineshaft", "buried_treasure")), new Biomes(true, 16, List.of()));
+        return new AddonConfig(true, 500, 1, 5, new Structures(List.of("mineshaft", "buried_treasure")), new Biomes(true, 16, List.of()));
     }
 
     /**

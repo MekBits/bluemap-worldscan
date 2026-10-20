@@ -84,7 +84,7 @@ final class ScanPass {
         ScanState previous = loadState(stateFile, world.id());
         Log.info("scanning world " + world.id() + " (" + dimension + ")");
         ScanOutcome outcome = WorldScanner.scan(
-                dimension, previous, new ScanLimits(config.maxChunksPerSecond()), cancel,
+                dimension, previous, new ScanLimits(config.maxChunksPerSecond(), config.scanThreads()), cancel,
                 checkpoint -> saveState(checkpoint, stateFile));
         if (outcome.skipped()) {
             Log.warn("world " + world.id() + " has no region folder in " + dimension + "; nothing was read or stored");
