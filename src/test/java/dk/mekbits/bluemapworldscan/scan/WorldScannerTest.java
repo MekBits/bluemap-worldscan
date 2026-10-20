@@ -24,6 +24,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Stream;
 
@@ -819,6 +821,42 @@ class WorldScannerTest {
                     }
                 }));
         assertEquals("broken reader", e.getMessage());
+    }
+
+    @Test
+    void aReaderThatFailsAfterACancelDoesNotEndTheCancelledScan() throws Exception {
+        for (int x = 0; x < 6; x++) {
+            Map<Integer, TestChunk> chunks = new HashMap<>();
+            for (int i = 0; i < 5; i++) {
+                chunks.put(i, zlib(chunk(x * 32 + i, 0, "minecraft:plains"), TS));
+            }
+            TestRegions.write(regionFile("r." + x + ".0.mca"), chunks);
+        }
+        CancellationToken cancel = new CancellationToken();
+        CountDownLatch secondStarted = new CountDownLatch(1);
+        CountDownLatch cancelled = new CountDownLatch(1);
+
+        ScanOutcome outcome = WorldScanner.scan(world, emptyState(), new ScanLimits(0, 4), cancel, state -> {
+        }, (file, chunkIndex) -> {
+            String name = file.getFileName().toString();
+            try {
+                if (name.equals("r.1.0.mca")) {
+                    // Cancel only once r.2 is past its first cancel check, so it is still read.
+                    assertTrue(secondStarted.await(10, TimeUnit.SECONDS));
+                    cancel.cancel();
+                    cancelled.countDown();
+                } else if (name.equals("r.2.0.mca")) {
+                    secondStarted.countDown();
+                    assertTrue(cancelled.await(10, TimeUnit.SECONDS));
+                    throw new IllegalStateException("broken reader");
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+
+        assertTrue(outcome.cancelled());
+        assertFalse(outcome.state().regions().containsKey("r.2.0.mca"));
     }
 
     @Test

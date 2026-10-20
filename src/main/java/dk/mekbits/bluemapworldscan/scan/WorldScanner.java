@@ -165,11 +165,12 @@ public final class WorldScanner {
                     break;
                 }
                 Map.Entry<String, Future<RegionResult>> next = inFlight.removeFirst();
-                RegionResult result = join(next.getValue());
                 if (stop) {
-                    // One thread would not have read the regions after the cut one.
+                    // One thread would not have read the regions after the cut one, so their results and failures are dropped.
+                    drop(next.getKey(), next.getValue());
                     continue;
                 }
+                RegionResult result = join(next.getValue());
                 if (result == null || result.cut()) {
                     cancelled = true;
                     stop = true;
@@ -279,6 +280,15 @@ public final class WorldScanner {
                 throw error;
             }
             throw new IllegalStateException(cause);
+        }
+    }
+
+    /** Waits for a read whose result is not taken; an exception it threw is only logged. */
+    private static void drop(String region, Future<RegionResult> result) {
+        try {
+            join(result);
+        } catch (RuntimeException e) {
+            Log.warn("reading " + region + " failed after the scan was cancelled: " + e);
         }
     }
 
