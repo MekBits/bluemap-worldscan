@@ -21,7 +21,8 @@ import dk.mekbits.bluemapworldscan.layer.LayersFile.Poi;
 
 /**
  * Turns stored layers into BlueMap marker sets on a map. Every instance does this with the same
- * code from the same file, so the sets of two instances are the same.
+ * code, from the stored file or, on the scanner, from the layers it has just stored, so the sets
+ * of two instances are the same.
  *
  * <p>It remembers which sets it put on each map, so a set that a newer set of layers no longer
  * holds (the last structure of its kind was pruned, or the layer was switched off) is removed

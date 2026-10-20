@@ -99,8 +99,8 @@ public final class LayerStore {
     /**
      * The {@code formatVersion} of a stored file, read with a stream that stops at it: it is the
      * first field this addon writes, so the layers are not parsed to their end for one number. A
-     * file without it, or one that cannot be read, gives 0, so a newer format with other fields can
-     * still be told from a damaged file.
+     * file without it, or one that cannot be read up to it, gives 0. Damage after the field is not
+     * seen, so a newer file cut off after its version still counts as newer and is left alone.
      */
     private static int formatVersion(AssetStorage storage, String asset, boolean gzip) {
         try {
